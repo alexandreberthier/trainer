@@ -89,6 +89,14 @@ export function hoursFromSeconds(sec: number): number {
   return sec / 3600
 }
 
+export function formatMinutes(min: number): string {
+  if (!Number.isFinite(min) || min <= 0) return '—'
+  if (min < 1) return `${Math.max(1, Math.round(min * 60))} s`
+  const rounded = Math.round(min * 2) / 2
+  if (Number.isInteger(rounded)) return `${rounded} min`
+  return `${String(rounded).replace('.', ',')} min`
+}
+
 export function uid(prefix = 'id'): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
 }

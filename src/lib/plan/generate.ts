@@ -1,6 +1,7 @@
 import type { FitnessSnapshot, Phase, PlannedWorkout, RaceDistance, Sport, TrainableSport, TrainingPlan, WorkoutBlock } from '../types'
 import { addDays, diffDays, isoDate, startOfWeekMonday, uid } from '../format'
 import { zoneTarget } from '../fitness/analyze'
+import { structureTotal } from '../workout-graph'
 
 const RACE_LABEL: Record<RaceDistance, string> = {
   sprint: 'Sprint',
@@ -170,8 +171,42 @@ function weekTemplate(phase: Phase, race: RaceDistance, available: number[], spo
 }
 
 function scaleDuration(baseMin: number, weekHours: number, peakHours: number): number {
-  const factor = clamp(weekHours / Math.max(4, peakHours), 0.55, 1.15)
+  const factor = clamp(weekHours / Math.max(5, peakHours), 0.85, 1.2)
   return Math.round(baseMin * factor)
+}
+
+function syncDuration(w: PlannedWorkout): PlannedWorkout {
+  const total = Math.round(structureTotal(w))
+  if (total > 0) w.durationMin = total
+  return w
+}
+
+function scaleEasyBlocks(w: PlannedWorkout, factor: number) {
+  for (const block of w.structure) {
+    if (block.intensity === 'easy' && block.durationMin && block.durationMin >= 8) {
+      block.durationMin = Math.round(block.durationMin * factor)
+    }
+  }
+  syncDuration(w)
+}
+
+function fitWeekHours(sessions: PlannedWorkout[], weekHours: number) {
+  if (!sessions.length) return
+  for (const session of sessions) syncDuration(session)
+  const target = weekHours * 60
+  const current = sessions.reduce((sum, session) => sum + session.durationMin, 0)
+  if (current < 1 || current >= target * 0.92) return
+  let easyPool = 0
+  for (const session of sessions) {
+    for (const block of session.structure) {
+      if (block.intensity === 'easy' && block.durationMin && block.durationMin >= 8) {
+        easyPool += block.durationMin
+      }
+    }
+  }
+  if (easyPool < 10) return
+  const factor = Math.min(2.3, (easyPool + (target - current)) / easyPool)
+  for (const session of sessions) scaleEasyBlocks(session, factor)
 }
 
 function buildSession(
@@ -206,251 +241,346 @@ function buildSession(
 
   switch (kind) {
     case 'swim-test':
-      return workout({
-        date,
-        sport: 'swim',
-        title: 'CSS-Test',
-        phase,
-        intensity: 'test',
-        durationMin: 40,
-        description: '400 m und 200 m möglichst gleichmäßig all-out, 8–10 min locker dazwischen. Daraus wird die Schwimm-Schwelle berechnet.',
-        structure: [
-          block({ label: 'Einschwimmen', durationMin: 10, target: easySwim, intensity: 'easy' }),
-          block({ label: '400 m Test', distanceM: 400, target: 'maximal gleichmäßig', intensity: 'test' }),
-          block({ label: 'Pause locker', durationMin: 10, target: easySwim, intensity: 'recovery' }),
-          block({ label: '200 m Test', distanceM: 200, target: 'maximal gleichmäßig', intensity: 'test' }),
-          block({ label: 'Ausschwimmen', durationMin: 8, target: easySwim, intensity: 'easy' }),
-        ],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'swim',
+          title: 'CSS-Test',
+          phase,
+          intensity: 'test',
+          durationMin: 45,
+          description: '400 m und 200 m möglichst gleichmäßig all-out, 8–10 min locker dazwischen. Daraus wird die Schwimm-Schwelle berechnet.',
+          structure: [
+            block({ label: 'Einschwimmen', durationMin: 12, target: easySwim, intensity: 'easy' }),
+            block({ label: '400 m Test', durationMin: 8, distanceM: 400, target: 'maximal gleichmäßig', intensity: 'test' }),
+            block({ label: 'Pause locker', durationMin: 10, target: easySwim, intensity: 'recovery' }),
+            block({ label: '200 m Test', durationMin: 4, distanceM: 200, target: 'maximal gleichmäßig', intensity: 'test' }),
+            block({ label: 'Ausschwimmen', durationMin: 8, target: easySwim, intensity: 'easy' }),
+          ],
+        }),
+      )
     case 'swim-css':
-      return workout({
-        date,
-        sport: 'swim',
-        title: 'CSS-Intervalle',
-        phase,
-        intensity: 'threshold',
-        durationMin: scaleDuration(50, weekHours, peakHours),
-        description: `${reps}× 200 m an der Schwelle (${css}), kurze Pause. Ziel: Tempo halten ohne zu zerfallen.`,
-        structure: [
-          block({ label: 'Einschwimmen', durationMin: 10, target: easySwim, intensity: 'easy' }),
-          block({
-            label: `${reps}× 200 m CSS`,
-            repeats: reps,
-            steps: [
-              { label: '200 m CSS', distanceM: 200, target: css, intensity: 'threshold' },
-              { label: '20 s Pause', durationMin: 0.3, target: 'Pause', intensity: 'recovery' },
-            ],
-            target: css,
-            intensity: 'threshold',
-          }),
-          block({ label: 'Ausschwimmen', durationMin: 8, target: easySwim, intensity: 'easy' }),
-        ],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'swim',
+          title: 'CSS-Intervalle',
+          phase,
+          intensity: 'threshold',
+          durationMin: scaleDuration(55, weekHours, peakHours),
+          description: `${reps}× 200 m bei ${css}, dazwischen 20–30 s Pause. Tempo soll über alle Wiederholungen gleich bleiben.`,
+          structure: [
+            block({ label: 'Einschwimmen', durationMin: 12, target: easySwim, intensity: 'easy' }),
+            block({
+              label: `${reps}× 200 m CSS`,
+              repeats: reps,
+              steps: [
+                { label: '200 m CSS', durationMin: 5, distanceM: 200, target: css, intensity: 'threshold' },
+                { label: 'Pause an der Wand', durationMin: 0.4, target: '20–30 s stehen', intensity: 'recovery' },
+              ],
+              target: css,
+              intensity: 'threshold',
+            }),
+            block({ label: 'Ausschwimmen', durationMin: 8, target: easySwim, intensity: 'easy' }),
+          ],
+        }),
+      )
     case 'swim-endurance':
-      return workout({
-        date,
-        sport: 'swim',
-        title: phase === 'base' ? 'Technik & Ausdauer' : 'Schwimm-Ausdauer',
-        phase,
-        intensity: 'easy',
-        durationMin: scaleDuration(45, weekHours, peakHours),
-        description: 'Locker, lange Lagen, Technik. Wenn CSS feststeht, 4× 50 m etwas flotter einstreuen.',
-        structure: [
-          block({ label: 'Technik', durationMin: 12, target: easySwim, intensity: 'easy' }),
-          block({ label: 'Hauptlage', durationMin: 20, target: easySwim, intensity: 'easy' }),
-          block({ label: '4× 50 m flott', repeats: 4, target: fastSwim, intensity: 'steady' }),
-          block({ label: 'Ausschwimmen', durationMin: 6, target: easySwim, intensity: 'easy' }),
-        ],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'swim',
+          title: phase === 'base' ? 'Technik & Ausdauer' : 'Schwimm-Ausdauer',
+          phase,
+          intensity: 'easy',
+          durationMin: scaleDuration(50, weekHours, peakHours),
+          description: `Locker bei ${easySwim}. Lange Lagen, saubere Technik. Zum Schluss 4× 50 m etwas flotter.`,
+          structure: [
+            block({ label: 'Technik / Einschwimmen', durationMin: 12, target: easySwim, intensity: 'easy' }),
+            block({ label: 'Hauptlage', durationMin: 24, target: easySwim, intensity: 'easy' }),
+            block({
+              label: '4× 50 m flott',
+              repeats: 4,
+              steps: [
+                { label: '50 m flott', durationMin: 1.2, distanceM: 50, target: fastSwim, intensity: 'steady' },
+                { label: '15 s Pause', durationMin: 0.25, target: 'kurz stehen', intensity: 'recovery' },
+              ],
+              target: fastSwim,
+              intensity: 'steady',
+            }),
+            block({ label: 'Ausschwimmen', durationMin: 8, target: easySwim, intensity: 'easy' }),
+          ],
+        }),
+      )
     case 'bike-hard': {
       const vo2 = phase === 'peak' || (phase === 'build' && weekInPhase % 2 === 1)
-      return workout({
-        date,
-        sport: 'bike',
-        title: vo2 ? 'Rad VO2' : 'Rad Schwelle',
-        phase,
-        intensity: vo2 ? 'vo2' : 'threshold',
-        durationMin: scaleDuration(vo2 ? 55 : 70, weekHours, peakHours),
-        description: vo2
-          ? `${Math.min(6, 3 + weekInPhase)}× 3 min hart (${vo2Bike}), 3 min locker.`
-          : `${Math.min(4, 2 + Math.floor(weekInPhase / 2))}× 12 min bei ${thBike}, 4 min locker.`,
-        structure: vo2
-          ? [
-              block({ label: 'Einrollen', durationMin: 15, target: easyBike, intensity: 'easy' }),
-              block({
-                label: 'VO2-Intervalle',
-                repeats: Math.min(6, 3 + weekInPhase),
-                steps: [
-                  { label: '3 min hart', durationMin: 3, target: vo2Bike, intensity: 'vo2' },
-                  { label: '3 min locker', durationMin: 3, target: easyBike, intensity: 'recovery' },
-                ],
-                target: vo2Bike,
-                intensity: 'vo2',
-              }),
-              block({ label: 'Ausrollen', durationMin: 10, target: easyBike, intensity: 'easy' }),
-            ]
-          : [
-              block({ label: 'Einrollen', durationMin: 15, target: easyBike, intensity: 'easy' }),
-              block({
-                label: 'Schwellen-Blöcke',
-                repeats: Math.min(4, 2 + Math.floor(weekInPhase / 2)),
-                steps: [
-                  { label: '12 min Schwelle', durationMin: 12, target: thBike, intensity: 'threshold' },
-                  { label: '4 min locker', durationMin: 4, target: easyBike, intensity: 'recovery' },
-                ],
-                target: thBike,
-                intensity: 'threshold',
-              }),
-              block({ label: 'Ausrollen', durationMin: 10, target: easyBike, intensity: 'easy' }),
-            ],
-      })
+      const vo2Reps = Math.min(6, 4 + Math.floor(weekInPhase / 2))
+      const thReps = Math.min(4, 2 + Math.floor(weekInPhase / 2))
+      return syncDuration(
+        workout({
+          date,
+          sport: 'bike',
+          title: vo2 ? 'Rad VO2' : 'Rad Schwelle',
+          phase,
+          intensity: vo2 ? 'vo2' : 'threshold',
+          durationMin: scaleDuration(vo2 ? 75 : 90, weekHours, peakHours),
+          description: vo2
+            ? `${vo2Reps}× 3 min bei ${vo2Bike}, jeweils 3 min locker dazwischen.`
+            : `${thReps}× 12 min bei ${thBike}, jeweils 4 min locker dazwischen.`,
+          structure: vo2
+            ? [
+                block({ label: 'Einrollen', durationMin: 18, target: easyBike, intensity: 'easy' }),
+                block({
+                  label: `${vo2Reps}× 3 min VO2`,
+                  repeats: vo2Reps,
+                  steps: [
+                    { label: '3 min hart', durationMin: 3, target: vo2Bike, intensity: 'vo2' },
+                    { label: '3 min locker', durationMin: 3, target: easyBike, intensity: 'recovery' },
+                  ],
+                  target: vo2Bike,
+                  intensity: 'vo2',
+                }),
+                block({ label: 'Ausrollen', durationMin: 12, target: easyBike, intensity: 'easy' }),
+              ]
+            : [
+                block({ label: 'Einrollen', durationMin: 18, target: easyBike, intensity: 'easy' }),
+                block({
+                  label: `${thReps}× 12 min Schwelle`,
+                  repeats: thReps,
+                  steps: [
+                    { label: '12 min Schwelle', durationMin: 12, target: thBike, intensity: 'threshold' },
+                    { label: '4 min locker', durationMin: 4, target: easyBike, intensity: 'recovery' },
+                  ],
+                  target: thBike,
+                  intensity: 'threshold',
+                }),
+                block({ label: 'Ausrollen', durationMin: 12, target: easyBike, intensity: 'easy' }),
+              ],
+        }),
+      )
     }
     case 'bike-endurance':
-    case 'bike-long':
-      return workout({
-        date,
-        sport: 'bike',
-        title: kind === 'bike-long' ? 'Langer Radausflug' : 'Rad Ausdauer',
-        phase,
-        intensity: 'easy',
-        durationMin: scaleDuration(kind === 'bike-long' ? (race === 'ironman' ? 180 : race === 'half' ? 150 : 90) : 60, weekHours, peakHours),
-        description: `Im Ausdauerbereich (${easyBike}). Trittfrequenz 85–95, Gesprächspace.`,
-        structure: [
-          block({ label: 'Ganze Fahrt Z2', durationMin: scaleDuration(kind === 'bike-long' ? 90 : 60, weekHours, peakHours), target: easyBike, intensity: 'easy' }),
-        ],
-      })
+    case 'bike-long': {
+      const longRide = kind === 'bike-long'
+      const main = longRide ? (race === 'ironman' ? 150 : race === 'half' ? 120 : 90) : 70
+      return syncDuration(
+        workout({
+          date,
+          sport: 'bike',
+          title: longRide ? 'Langer Radausflug' : 'Rad Ausdauer',
+          phase,
+          intensity: 'easy',
+          durationMin: scaleDuration(main + 25, weekHours, peakHours),
+          description: `Im Ausdauerbereich (${easyBike}). Trittfrequenz 85–95. Du solltest noch reden können — wenn du keuchst, zu hart.`,
+          structure: [
+            block({ label: 'Einrollen', durationMin: 12, target: easyBike, intensity: 'easy' }),
+            block({ label: 'Hauptteil Z2', durationMin: scaleDuration(main, weekHours, peakHours), target: easyBike, intensity: 'easy' }),
+            block({ label: 'Ausrollen', durationMin: 10, target: easyBike, intensity: 'easy' }),
+          ],
+        }),
+      )
+    }
     case 'run-easy':
-      return workout({
-        date,
-        sport: 'run',
-        title: 'Dauerlauf Easy',
-        phase,
-        intensity: 'easy',
-        durationMin: scaleDuration(phase === 'taper' ? 35 : 50, weekHours, peakHours),
-        description: `Locker ${easyRun}. Wenn du in Sätze kommst, bist du zu schnell.`,
-        structure: [
-          block({ label: 'Easy', durationMin: scaleDuration(50, weekHours, peakHours), target: easyRun, intensity: 'easy' }),
-          block({ label: '4 Steigerungen', durationMin: 4, target: '20 s schnell / 40 s traben', intensity: 'steady' }),
-        ],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'run',
+          title: 'Dauerlauf Easy',
+          phase,
+          intensity: 'easy',
+          durationMin: scaleDuration(phase === 'taper' ? 45 : 65, weekHours, peakHours),
+          description: `Locker bei ${easyRun}. Du solltest noch in ganzen Sätzen sprechen können. Wenn du keuchst, bist du zu schnell.`,
+          structure: [
+            block({ label: 'Einlaufen', durationMin: 10, target: easyRun, intensity: 'easy' }),
+            block({
+              label: 'Dauerlauf',
+              durationMin: scaleDuration(phase === 'taper' ? 25 : 45, weekHours, peakHours),
+              target: easyRun,
+              intensity: 'easy',
+            }),
+            block({
+              label: '4 Steigerungen',
+              repeats: 4,
+              steps: [
+                { label: '20 s schnell', durationMin: 0.35, target: 'locker beschleunigen', intensity: 'steady' },
+                { label: '40 s traben', durationMin: 0.7, target: easyRun, intensity: 'recovery' },
+              ],
+              target: '20 s schnell / 40 s traben',
+              intensity: 'steady',
+            }),
+            block({ label: 'Auslaufen', durationMin: 8, target: easyRun, intensity: 'easy' }),
+          ],
+        }),
+      )
     case 'run-long':
-      return workout({
-        date,
-        sport: 'run',
-        title: 'Langer Lauf',
-        phase,
-        intensity: 'easy',
-        durationMin: scaleDuration(race === 'ironman' ? 120 : 90, weekHours, peakHours),
-        description: `Überwiegend Easy (${easyRun}). Letztes Viertel darf Richtung Steady gehen.`,
-        structure: [block({ label: 'Langer Lauf', durationMin: scaleDuration(90, weekHours, peakHours), target: easyRun, intensity: 'easy' })],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'run',
+          title: 'Langer Lauf',
+          phase,
+          intensity: 'easy',
+          durationMin: scaleDuration(race === 'ironman' ? 130 : 90, weekHours, peakHours),
+          description: `Überwiegend Easy (${easyRun}). Letztes Viertel darf etwas flotter werden, aber du solltest noch sprechen können.`,
+          structure: [
+            block({ label: 'Einlaufen', durationMin: 12, target: easyRun, intensity: 'easy' }),
+            block({
+              label: 'Hauptteil',
+              durationMin: scaleDuration(race === 'ironman' ? 100 : 65, weekHours, peakHours),
+              target: easyRun,
+              intensity: 'easy',
+            }),
+            block({ label: 'Auslaufen', durationMin: 10, target: easyRun, intensity: 'easy' }),
+          ],
+        }),
+      )
     case 'run-strides':
-      return workout({
-        date,
-        sport: 'run',
-        title: 'Easy + Steigerungen',
-        phase,
-        intensity: 'easy',
-        durationMin: scaleDuration(45, weekHours, peakHours),
-        description: 'Grundlagen plus 6 kurze Steigerungen für die Laufökonomie.',
-        structure: [
-          block({ label: 'Easy', durationMin: 35, target: easyRun, intensity: 'easy' }),
-          block({ label: '6× 20 s Steigerung', durationMin: 8, target: 'schnell, locker', intensity: 'steady' }),
-        ],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'run',
+          title: 'Easy + Steigerungen',
+          phase,
+          intensity: 'easy',
+          durationMin: scaleDuration(55, weekHours, peakHours),
+          description: `Grundlagen bei ${easyRun}, danach 6 kurze Steigerungen für die Laufökonomie.`,
+          structure: [
+            block({ label: 'Einlaufen', durationMin: 10, target: easyRun, intensity: 'easy' }),
+            block({ label: 'Dauerlauf', durationMin: 30, target: easyRun, intensity: 'easy' }),
+            block({
+              label: '6 Steigerungen',
+              repeats: 6,
+              steps: [
+                { label: '20 s Steigerung', durationMin: 0.35, target: 'schnell, locker', intensity: 'steady' },
+                { label: '40 s traben', durationMin: 0.7, target: easyRun, intensity: 'recovery' },
+              ],
+              target: '20 s schnell / 40 s traben',
+              intensity: 'steady',
+            }),
+            block({ label: 'Auslaufen', durationMin: 8, target: easyRun, intensity: 'easy' }),
+          ],
+        }),
+      )
     case 'run-sharp':
-      return workout({
-        date,
-        sport: 'run',
-        title: 'Kurze Schärfe',
-        phase,
-        intensity: 'vo2',
-        durationMin: 40,
-        description: `Wenige Intervalle bei ${vo2Run}, damit das Tempo nicht verloren geht.`,
-        structure: [
-          block({ label: 'Einlaufen', durationMin: 15, target: easyRun, intensity: 'easy' }),
-          block({
-            label: '4× 2 min',
-            repeats: 4,
-            steps: [
-              { label: '2 min flott', durationMin: 2, target: vo2Run, intensity: 'vo2' },
-              { label: '2 min Trab', durationMin: 2, target: easyRun, intensity: 'recovery' },
-            ],
-            target: vo2Run,
-            intensity: 'vo2',
-          }),
-          block({ label: 'Auslaufen', durationMin: 10, target: easyRun, intensity: 'easy' }),
-        ],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'run',
+          title: 'Kurze Schärfe',
+          phase,
+          intensity: 'vo2',
+          durationMin: 50,
+          description: `Wenige Intervalle bei ${vo2Run}, damit das Tempo nicht verloren geht.`,
+          structure: [
+            block({ label: 'Einlaufen', durationMin: 15, target: easyRun, intensity: 'easy' }),
+            block({
+              label: '4× 2 min',
+              repeats: 4,
+              steps: [
+                { label: '2 min flott', durationMin: 2, target: vo2Run, intensity: 'vo2' },
+                { label: '2 min traben', durationMin: 2, target: easyRun, intensity: 'recovery' },
+              ],
+              target: vo2Run,
+              intensity: 'vo2',
+            }),
+            block({ label: 'Auslaufen', durationMin: 12, target: easyRun, intensity: 'easy' }),
+          ],
+        }),
+      )
     case 'run-hard': {
       const th = phase === 'build' && weekInPhase % 2 === 0
-      return workout({
-        date,
-        sport: 'run',
-        title: th ? 'Tempolauf Schwelle' : 'VO2-Intervalle',
-        phase,
-        intensity: th ? 'threshold' : 'vo2',
-        durationMin: scaleDuration(55, weekHours, peakHours),
-        description: th
-          ? `${Math.min(5, 3 + Math.floor(weekInPhase / 2))}× 5 min bei ${thRun}, 90 s Trabpause.`
-          : `${Math.min(6, 4 + weekInPhase)}× 3 min bei ${vo2Run}, 90 s Trabpause.`,
-        structure: [
-          block({ label: 'Einlaufen', durationMin: 12, target: easyRun, intensity: 'easy' }),
-          block({
-            label: th ? 'Schwellen-Blöcke' : 'VO2-Intervalle',
-            repeats: th ? Math.min(5, 3 + Math.floor(weekInPhase / 2)) : Math.min(6, 4 + weekInPhase),
-            steps: [
-              { label: th ? '5 min Schwelle' : '3 min VO2', durationMin: th ? 5 : 3, target: th ? thRun : vo2Run, intensity: th ? 'threshold' : 'vo2' },
-              { label: '90 s Trab', durationMin: 1.5, target: easyRun, intensity: 'recovery' },
-            ],
-            target: th ? thRun : vo2Run,
-            intensity: th ? 'threshold' : 'vo2',
-          }),
-          block({ label: 'Auslaufen', durationMin: 10, target: easyRun, intensity: 'easy' }),
-        ],
-      })
+      const thReps = Math.min(5, 3 + Math.floor(weekInPhase / 2))
+      const vo2Reps = Math.min(6, 4 + weekInPhase)
+      return syncDuration(
+        workout({
+          date,
+          sport: 'run',
+          title: th ? 'Tempolauf Schwelle' : 'VO2-Intervalle',
+          phase,
+          intensity: th ? 'threshold' : 'vo2',
+          durationMin: scaleDuration(65, weekHours, peakHours),
+          description: th
+            ? `${thReps}× 5 min bei ${thRun}, dazwischen 90 s traben.`
+            : `${vo2Reps}× 3 min bei ${vo2Run}, dazwischen 90 s traben.`,
+          structure: [
+            block({ label: 'Einlaufen', durationMin: 15, target: easyRun, intensity: 'easy' }),
+            block({
+              label: th ? `${thReps}× 5 min Schwelle` : `${vo2Reps}× 3 min VO2`,
+              repeats: th ? thReps : vo2Reps,
+              steps: [
+                {
+                  label: th ? '5 min Schwelle' : '3 min VO2',
+                  durationMin: th ? 5 : 3,
+                  target: th ? thRun : vo2Run,
+                  intensity: th ? 'threshold' : 'vo2',
+                },
+                { label: '90 s traben', durationMin: 1.5, target: easyRun, intensity: 'recovery' },
+              ],
+              target: th ? thRun : vo2Run,
+              intensity: th ? 'threshold' : 'vo2',
+            }),
+            block({ label: 'Auslaufen', durationMin: 12, target: easyRun, intensity: 'easy' }),
+          ],
+        }),
+      )
     }
     case 'brick':
-      return workout({
-        date,
-        sport: 'brick',
-        title: 'Brick Rad + Lauf',
-        phase,
-        intensity: phase === 'peak' ? 'steady' : 'easy',
-        durationMin: scaleDuration(phase === 'peak' ? 110 : 90, weekHours, peakHours),
-        description: `Rad im Ausdauer-/Steady-Bereich, direkt danach 15–25 min Laufen. Wechsel unter 3 min.`,
-        structure: [
-          block({ label: 'Rad', durationMin: scaleDuration(70, weekHours, peakHours), target: phase === 'peak' ? target(fitness, 'bike', 'tempo') : easyBike, intensity: phase === 'peak' ? 'steady' : 'easy' }),
-          block({ label: 'Wechsel', durationMin: 3, target: 'schnell rumziehen', intensity: 'steady' }),
-          block({ label: 'Lauf', durationMin: phase === 'peak' ? 25 : 15, target: phase === 'peak' ? thRun : easyRun, intensity: phase === 'peak' ? 'steady' : 'easy' }),
-        ],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'brick',
+          title: 'Brick Rad + Lauf',
+          phase,
+          intensity: phase === 'peak' ? 'steady' : 'easy',
+          durationMin: scaleDuration(phase === 'peak' ? 120 : 100, weekHours, peakHours),
+          description: `Rad im Ausdauerbereich, direkt danach laufen. Wechsel unter 3 Minuten.`,
+          structure: [
+            block({
+              label: 'Rad',
+              durationMin: scaleDuration(phase === 'peak' ? 80 : 70, weekHours, peakHours),
+              target: phase === 'peak' ? target(fitness, 'bike', 'tempo') : easyBike,
+              intensity: phase === 'peak' ? 'steady' : 'easy',
+            }),
+            block({ label: 'Wechsel', durationMin: 3, target: 'Helm ab, Schuhe an', intensity: 'steady' }),
+            block({
+              label: 'Lauf',
+              durationMin: phase === 'peak' ? 25 : 18,
+              target: phase === 'peak' ? thRun : easyRun,
+              intensity: phase === 'peak' ? 'steady' : 'easy',
+            }),
+          ],
+        }),
+      )
     case 'strength':
-      return workout({
-        date,
-        sport: 'strength',
-        title: 'Kraft (40 min)',
-        phase,
-        intensity: 'easy',
-        durationMin: 40,
-        description: 'Kniebeuge, Hip Thinge, Ausfallschritte, Rumpf, Zug. 3 Sätze, nicht bis zum Muskelversagen.',
-        structure: [
-          block({ label: 'Warm-up', durationMin: 8, target: 'Mobilisation', intensity: 'easy' }),
-          block({ label: 'Hauptteil', durationMin: 25, target: '3× 6–8 Wiederholungen', intensity: 'steady' }),
-          block({ label: 'Rumpf', durationMin: 7, target: 'Plank / Side Plank', intensity: 'easy' }),
-        ],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: 'strength',
+          title: 'Kraft',
+          phase,
+          intensity: 'easy',
+          durationMin: 45,
+          description: 'Kniebeuge, Hip Hinge, Ausfallschritte, Rumpf, Zug. 3 Sätze, nicht bis zum Muskelversagen.',
+          structure: [
+            block({ label: 'Warm-up', durationMin: 8, target: 'Mobilisation', intensity: 'easy' }),
+            block({ label: 'Hauptteil', durationMin: 28, target: '3× 6–8 Wiederholungen', intensity: 'steady' }),
+            block({ label: 'Rumpf', durationMin: 8, target: 'Plank / Side Plank', intensity: 'easy' }),
+          ],
+        }),
+      )
     default:
-      return workout({
-        date,
-        sport: spec.sport,
-        title: 'Training',
-        phase,
-        intensity: 'easy',
-        durationMin: 45,
-        description: '',
-        structure: [],
-      })
+      return syncDuration(
+        workout({
+          date,
+          sport: spec.sport,
+          title: 'Training',
+          phase,
+          intensity: 'easy',
+          durationMin: 50,
+          description: '',
+          structure: [block({ label: 'Training', durationMin: 50, target: 'nach Gefühl', intensity: 'easy' })],
+        }),
+      )
   }
 }
 
@@ -494,10 +624,10 @@ export function generatePlan(options: {
   const totalDays = Math.max(21, diffDays(startMonday, raceDate) + 1)
   const weekCount = Math.ceil(totalDays / 7)
 
-  const current = Math.max(3, options.fitness.weeklyHours || 4)
-  const peakCap = Math.min(PEAK_HOURS[race], options.weeklyHoursTarget || PEAK_HOURS[race])
-  const startHours = Math.min(current, peakCap)
-  const peakHours = Math.max(startHours, Math.min(peakCap, startHours + (peakCap - startHours)))
+  const targetHours = options.weeklyHoursTarget || PEAK_HOURS[race]
+  const peakHours = Math.min(PEAK_HOURS[race], targetHours)
+  const current = options.fitness.weeklyHours || peakHours
+  const startHours = clamp(current, peakHours * 0.75, peakHours)
 
   const workouts: PlannedWorkout[] = []
   const phaseWeekCounter: Record<Phase, number> = { base: 0, build: 0, peak: 0, taper: 0 }
@@ -517,15 +647,18 @@ export function generatePlan(options: {
 
     const hours = hoursForWeek(w, weekCount, startHours, peakHours, race)
     const specs = weekTemplate(phase, race, available, sports)
+    const weekSessions: PlannedWorkout[] = []
 
     for (const spec of specs) {
       const date = addDays(weekStart, spec.weekday)
       if (date > raceDate) continue
       if (date === raceDate) continue
-      workouts.push(
+      weekSessions.push(
         buildSession(spec, date, phase, hours, peakHours, phaseWeekCounter[phase], options.fitness, race, w === 0),
       )
     }
+    fitWeekHours(weekSessions, hours)
+    workouts.push(...weekSessions)
   }
 
   workouts.push(raceDayWorkout(raceDate, race, sports))

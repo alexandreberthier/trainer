@@ -7,7 +7,7 @@ import type { Activity, AthleteProfile, FitnessSnapshot, RaceDistance, Trainable
 import { isoDate } from '@/lib/format'
 
 const STORAGE_KEY = 'trainer-state-v1'
-const PLAN_VERSION = 3
+const PLAN_VERSION = 4
 
 export interface PersistedState {
   profile: AthleteProfile
