@@ -1,16 +1,28 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { handleStravaRequest, type StravaEnv } from '../../server/strava-api'
+import { readCookieTokens } from '../../server/strava-core'
 
-function env(): StravaEnv {
-  return {
-    STRAVA_CLIENT_ID: process.env.STRAVA_CLIENT_ID,
-    STRAVA_CLIENT_SECRET: process.env.STRAVA_CLIENT_SECRET,
-    APP_URL: process.env.APP_URL,
-  }
+interface ApiRequest {
+  headers: { cookie?: string | string[] }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const incoming = req as unknown as import('node:http').IncomingMessage
-  incoming.url = `/api/strava/status`
-  await handleStravaRequest(incoming, res as unknown as import('node:http').ServerResponse, env())
+interface ApiResponse {
+  statusCode: number
+  setHeader: (name: string, value: string) => void
+  end: (body?: string) => void
+}
+
+function cookieHeader(value?: string | string[]): string | undefined {
+  if (Array.isArray(value)) return value.join('; ')
+  return value
+}
+
+export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
+  const tokens = readCookieTokens(cookieHeader(req.headers.cookie))
+  res.statusCode = 200
+  res.setHeader('Content-Type', 'application/json')
+  res.end(
+    JSON.stringify({
+      connected: Boolean(tokens),
+      athleteName: tokens?.athlete_name ?? null,
+    }),
+  )
 }

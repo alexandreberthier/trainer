@@ -12,9 +12,15 @@ const { syncing, error, sync } = useStravaConnect()
 
 onMounted(async () => {
   if (store.needsRebuild()) store.rebuild()
+  const oauthError = route.query.strava_error
+  if (typeof oauthError === 'string' && oauthError) {
+    error.value = oauthError
+    history.replaceState({}, '', route.path)
+    return
+  }
   if (route.query.strava === 'connected') {
     await sync()
-    history.replaceState({}, '', '/app')
+    history.replaceState({}, '', route.path)
   }
 })
 

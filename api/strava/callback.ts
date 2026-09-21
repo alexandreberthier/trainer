@@ -1,17 +1,69 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { handleStravaRequest, type StravaEnv } from '../../server/strava-api'
+import {
+  envFromProcess,
+  exchangeCode,
+  tokenCookie,
+} from '../../server/strava-core'
 
-function env(): StravaEnv {
-  return {
-    STRAVA_CLIENT_ID: process.env.STRAVA_CLIENT_ID,
-    STRAVA_CLIENT_SECRET: process.env.STRAVA_CLIENT_SECRET,
-    STRAVA_REDIRECT_URI: process.env.STRAVA_REDIRECT_URI,
-    APP_URL: process.env.APP_URL,
+type Query = Record<string, string | string[] | undefined>
+
+interface ApiRequest {
+  query?: Query
+  url?: string
+  headers: { host?: string }
+}
+
+interface ApiResponse {
+  statusCode: number
+  setHeader: (name: string, value: string) => void
+  end: (body?: string) => void
+}
+
+function queryValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? ''
+  return value ?? ''
+}
+
+function param(req: ApiRequest, key: string): string {
+  const fromQuery = queryValue(req.query?.[key])
+  if (fromQuery) return fromQuery
+  if (!req.url) return ''
+  try {
+    return new URL(req.url, `https://${req.headers.host ?? 'localhost'}`).searchParams.get(key) ?? ''
+  } catch {
+    return ''
   }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const incoming = req as unknown as import('node:http').IncomingMessage
-  incoming.url = req.url?.startsWith('/api/') ? req.url : `/api/strava/callback${req.url?.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`
-  await handleStravaRequest(incoming, res as unknown as import('node:http').ServerResponse, env())
+function redirect(res: ApiResponse, location: string, cookie?: string) {
+  res.statusCode = 302
+  if (cookie) res.setHeader('Set-Cookie', cookie)
+  res.setHeader('Location', location)
+  res.end()
+}
+
+export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
+  const env = envFromProcess()
+  const host = req.headers.host ?? 'trainer-psi-three.vercel.app'
+  const app = env.APP_URL || `https://${host}`
+  const secure = app.startsWith('https')
+
+  const oauthError = param(req, 'error')
+  if (oauthError) {
+    redirect(res, `${app}/app?strava_error=${encodeURIComponent(oauthError)}`)
+    return
+  }
+
+  const code = param(req, 'code')
+  if (!code) {
+    redirect(res, `${app}/app?strava_error=${encodeURIComponent('Kein OAuth-Code')}`)
+    return
+  }
+
+  try {
+    const tokens = await exchangeCode(env, code)
+    redirect(res, `${app}/app?strava=connected`, tokenCookie(tokens, secure))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unbekannter Fehler'
+    redirect(res, `${app}/app?strava_error=${encodeURIComponent(message.slice(0, 180))}`)
+  }
 }
