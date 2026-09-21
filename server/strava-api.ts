@@ -19,6 +19,19 @@ export interface StravaTokens {
 
 const COOKIE = 'trainer_strava'
 
+function cleanEnv(value?: string): string {
+  return (value ?? '').replace(/\r/g, '').trim()
+}
+
+function normalizeStravaEnv(env: StravaEnv): StravaEnv {
+  return {
+    STRAVA_CLIENT_ID: cleanEnv(env.STRAVA_CLIENT_ID),
+    STRAVA_CLIENT_SECRET: cleanEnv(env.STRAVA_CLIENT_SECRET),
+    STRAVA_REDIRECT_URI: cleanEnv(env.STRAVA_REDIRECT_URI),
+    APP_URL: cleanEnv(env.APP_URL),
+  }
+}
+
 export function parseCookies(header?: string): Record<string, string> {
   const out: Record<string, string> = {}
   if (!header) return out
@@ -155,6 +168,7 @@ export async function handleStravaRequest(
   res: ServerResponse,
   env: StravaEnv,
 ): Promise<boolean> {
+  env = normalizeStravaEnv(env)
   const host = req.headers.host ?? 'localhost:5173'
   const url = new URL(req.url ?? '/', `http://${host}`)
   if (!url.pathname.startsWith('/api/strava')) return false
