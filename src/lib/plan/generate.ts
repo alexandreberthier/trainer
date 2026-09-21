@@ -1,4 +1,4 @@
-import type { FitnessSnapshot, Phase, PlannedWorkout, RaceDistance, Sport, TrainingPlan, WorkoutBlock } from '../types'
+import type { FitnessSnapshot, Phase, PlannedWorkout, RaceDistance, Sport, TrainableSport, TrainingPlan, WorkoutBlock } from '../types'
 import { addDays, diffDays, isoDate, startOfWeekMonday, uid } from '../format'
 import { zoneTarget } from '../fitness/analyze'
 
@@ -93,57 +93,80 @@ interface DaySpec {
   kind: string
 }
 
-function weekTemplate(phase: Phase, race: RaceDistance, available: number[]): DaySpec[] {
-  const pick = (...candidates: number[]) => candidates.find((d) => available.includes(d)) ?? available[0] ?? 0
+function weekTemplate(phase: Phase, race: RaceDistance, available: number[], sports: TrainableSport[]): DaySpec[] {
+  const has = (sport: TrainableSport) => sports.includes(sport)
+  const used = new Set<number>()
+  const take = (...candidates: number[]) => {
+    const hit =
+      candidates.find((d) => available.includes(d) && !used.has(d)) ?? available.find((d) => !used.has(d))
+    if (hit == null) return null
+    used.add(hit)
+    return hit
+  }
 
-  const rest = available.length >= 6 ? [pick(6)] : []
   const days: DaySpec[] = []
+  const runOnly = has('run') && !has('bike') && !has('swim')
 
-  const swimTech = pick(0)
-  const bikeHard = pick(2)
-  const runHard = pick(4)
-  const longBike = pick(5)
-  const swim2 = pick(3, 1)
-  const runEasy = pick(1, 3)
+  if (has('swim')) {
+    const first = take(0, 2, 3)
+    if (first != null) {
+      days.push({
+        weekday: first,
+        sport: 'swim',
+        kind: phase === 'base' ? 'swim-test-or-tech' : 'swim-css',
+      })
+    }
+    const second = take(3, 1, 4)
+    if (second != null) days.push({ weekday: second, sport: 'swim', kind: 'swim-endurance' })
+  }
 
-  days.push({ weekday: swimTech, sport: 'swim', kind: phase === 'base' || fitnessNeedsSwimTest(phase) ? 'swim-test-or-tech' : 'swim-css' })
-  days.push({ weekday: runEasy, sport: 'run', kind: 'run-easy' })
-  days.push({ weekday: bikeHard, sport: 'bike', kind: phase === 'base' ? 'bike-endurance' : 'bike-hard' })
-  if (swim2 !== swimTech) days.push({ weekday: swim2, sport: 'swim', kind: 'swim-endurance' })
-  days.push({ weekday: runHard, sport: 'run', kind: phase === 'taper' ? 'run-sharp' : phase === 'base' ? 'run-strides' : 'run-hard' })
-  days.push({
-    weekday: longBike,
-    sport: phase === 'peak' || phase === 'build' ? 'brick' : 'bike',
-    kind: phase === 'peak' || phase === 'build' ? 'brick' : 'bike-long',
-  })
-
-  if (race === 'half' || race === 'ironman') {
-    const longRun = pick(6, 1)
-    if (!days.some((d) => d.weekday === longRun)) {
+  if (has('run')) {
+    const easy = take(1, 3, 0)
+    if (easy != null) days.push({ weekday: easy, sport: 'run', kind: 'run-easy' })
+    const hard = take(4, 2, 1)
+    if (hard != null) {
+      days.push({
+        weekday: hard,
+        sport: 'run',
+        kind: phase === 'taper' ? 'run-sharp' : phase === 'base' ? 'run-strides' : 'run-hard',
+      })
+    }
+    const longRun = take(6, 5, 0)
+    if (longRun != null && (runOnly || race === 'half' || race === 'ironman' || !has('bike'))) {
       days.push({ weekday: longRun, sport: 'run', kind: phase === 'taper' ? 'run-easy' : 'run-long' })
+    }
+    if (runOnly) {
+      const extra = take(2, 3, 5)
+      if (extra != null) days.push({ weekday: extra, sport: 'run', kind: phase === 'base' ? 'run-easy' : 'run-strides' })
     }
   }
 
-  // Strength once in base/build if a free day exists
-  if (phase === 'base' || phase === 'build') {
-    const used = new Set(days.map((d) => d.weekday))
-    const free = available.find((d) => !used.has(d) && !rest.includes(d))
+  if (has('bike')) {
+    const quality = take(2, 3, 1)
+    if (quality != null) {
+      days.push({
+        weekday: quality,
+        sport: 'bike',
+        kind: phase === 'base' ? 'bike-endurance' : 'bike-hard',
+      })
+    }
+    const longRide = take(5, 6, 4)
+    if (longRide != null) {
+      const brick = has('run') && (phase === 'peak' || phase === 'build')
+      days.push({
+        weekday: longRide,
+        sport: brick ? 'brick' : 'bike',
+        kind: brick ? 'brick' : 'bike-long',
+      })
+    }
+  }
+
+  if (has('strength') && (phase === 'base' || phase === 'build')) {
+    const free = take(3, 1, 6, 0, 2, 4, 5)
     if (free != null) days.push({ weekday: free, sport: 'strength', kind: 'strength' })
   }
 
-  return dedupeDays(days)
-}
-
-function fitnessNeedsSwimTest(phase: Phase): boolean {
-  return phase === 'base'
-}
-
-function dedupeDays(days: DaySpec[]): DaySpec[] {
-  const map = new Map<number, DaySpec>()
-  for (const d of days) {
-    if (!map.has(d.weekday)) map.set(d.weekday, d)
-  }
-  return [...map.values()]
+  return days
 }
 
 function scaleDuration(baseMin: number, weekHours: number, peakHours: number): number {
@@ -431,19 +454,23 @@ function buildSession(
   }
 }
 
-function raceDayWorkout(date: string, race: RaceDistance): PlannedWorkout {
+function raceDayWorkout(date: string, race: RaceDistance, sports: TrainableSport[]): PlannedWorkout {
+  const hasSwim = sports.includes('swim')
+  const hasBike = sports.includes('bike')
+  const hasRun = sports.includes('run')
+  const triathlon = hasSwim && hasBike && hasRun
   return workout({
     date,
-    sport: 'brick',
-    title: `Wettkampf ${RACE_LABEL[race]}`,
+    sport: triathlon ? 'brick' : hasRun ? 'run' : hasBike ? 'bike' : 'swim',
+    title: triathlon ? `Wettkampf ${RACE_LABEL[race]}` : `Wettkampftag ${RACE_LABEL[race]}`,
     phase: 'taper',
     intensity: 'race',
     durationMin: race === 'sprint' ? 90 : race === 'olympic' ? 180 : race === 'half' ? 360 : 720,
     description: 'Wettkampftag. Nichts Neues, früh frühstücken, der Plan hat dich hierher gebracht.',
     structure: [
-      block({ label: 'Schwimmen', target: 'Wettkampfpace', intensity: 'race' }),
-      block({ label: 'Rad', target: 'Wettkampfpace', intensity: 'race' }),
-      block({ label: 'Laufen', target: 'Wettkampfpace', intensity: 'race' }),
+      ...(hasSwim ? [block({ label: 'Schwimmen', target: 'Wettkampfpace', intensity: 'race' })] : []),
+      ...(hasBike ? [block({ label: 'Rad', target: 'Wettkampfpace', intensity: 'race' })] : []),
+      ...(hasRun ? [block({ label: 'Laufen', target: 'Wettkampfpace', intensity: 'race' })] : []),
     ],
   })
 }
@@ -455,12 +482,14 @@ export function generatePlan(options: {
   availableDays: number[]
   fitness: FitnessSnapshot
   startDate?: string
+  enabledSports?: TrainableSport[]
 }): TrainingPlan {
   const today = options.startDate ?? isoDate(new Date())
   const startMonday = startOfWeekMonday(today)
   const race = options.raceType
   const raceDate = options.raceDate
   const available = options.availableDays.length ? [...options.availableDays].sort() : [0, 1, 2, 3, 4, 5]
+  const sports: TrainableSport[] = options.enabledSports?.length ? options.enabledSports : ['swim', 'bike', 'run']
 
   const totalDays = Math.max(21, diffDays(startMonday, raceDate) + 1)
   const weekCount = Math.ceil(totalDays / 7)
@@ -487,7 +516,7 @@ export function generatePlan(options: {
     }
 
     const hours = hoursForWeek(w, weekCount, startHours, peakHours, race)
-    const specs = weekTemplate(phase, race, available)
+    const specs = weekTemplate(phase, race, available, sports)
 
     for (const spec of specs) {
       const date = addDays(weekStart, spec.weekday)
@@ -499,7 +528,7 @@ export function generatePlan(options: {
     }
   }
 
-  workouts.push(raceDayWorkout(raceDate, race))
+  workouts.push(raceDayWorkout(raceDate, race, sports))
   workouts.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title))
 
   return {

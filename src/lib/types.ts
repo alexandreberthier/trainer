@@ -1,4 +1,5 @@
 export type Sport = 'swim' | 'bike' | 'run' | 'strength' | 'brick' | 'rest'
+export type TrainableSport = 'swim' | 'bike' | 'run' | 'strength'
 export type RaceDistance = 'sprint' | 'olympic' | 'half' | 'ironman'
 export type Phase = 'base' | 'build' | 'peak' | 'taper'
 export type Intensity = 'recovery' | 'easy' | 'steady' | 'threshold' | 'vo2' | 'race' | 'test'
@@ -66,6 +67,8 @@ export interface RunFitness {
 
 export interface BikeFitness {
   ftpWatts: number | null
+  estimatedFtpWatts: number | null
+  stravaFtpWatts: number | null
   source: string
   confidence: Confidence
   best20minWatts: number | null
@@ -103,9 +106,14 @@ export interface AthleteProfile {
   raceName: string
   weeklyHoursTarget: number
   availableDays: number[]
+  enabledSports: TrainableSport[]
   stravaAthleteId?: number
   stravaConnected: boolean
   demoMode: boolean
+  stravaFtpWatts?: number | null
+  ftpWattsOverride?: number | null
+  runThresholdSecOverride?: number | null
+  cssSecPer100Override?: number | null
 }
 
 export interface WorkoutBlock {

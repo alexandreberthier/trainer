@@ -169,6 +169,25 @@ async function stravaGet(access: string, path: string): Promise<unknown> {
   return res.json()
 }
 
+export async function fetchStravaFtp(access: string): Promise<number | null> {
+  try {
+    const athlete = (await stravaGet(access, '/athlete')) as { ftp?: number }
+    if (Number(athlete.ftp) > 50) return Math.round(Number(athlete.ftp))
+  } catch {
+    /* optional */
+  }
+  try {
+    const zones = (await stravaGet(access, '/athlete/zones')) as { power?: { zones?: Array<{ min?: number }> } }
+    const powerZones = zones.power?.zones
+    if (Array.isArray(powerZones) && powerZones.length >= 4 && Number(powerZones[3]?.min) > 50) {
+      return Math.round(Number(powerZones[3].min) / 0.91)
+    }
+  } catch {
+    /* optional */
+  }
+  return null
+}
+
 export async function fetchActivities(access: string): Promise<ReturnType<typeof mapActivity>[]> {
   const after = Math.floor(Date.now() / 1000) - 12 * 7 * 24 * 3600
   const list: Record<string, unknown>[] = []

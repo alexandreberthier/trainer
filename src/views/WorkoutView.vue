@@ -1,24 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import IntervalChart from '@/components/IntervalChart.vue'
 import SportBadge from '@/components/SportBadge.vue'
 import { formatDateLong } from '@/lib/format'
+import { INTENSITY_LABEL } from '@/lib/sport'
+import { workoutSegments } from '@/lib/workout-graph'
 import { useTrainerStore } from '@/stores/trainer'
 
 const route = useRoute()
 const store = useTrainerStore()
 
 const workout = computed(() => store.plan?.workouts.find((w) => w.id === route.params.id) ?? null)
-
-const intensityLabel: Record<string, string> = {
-  recovery: 'Erholung',
-  easy: 'Easy',
-  steady: 'Steady',
-  threshold: 'Schwelle',
-  vo2: 'VO2',
-  race: 'Wettkampf',
-  test: 'Test',
-}
+const segments = computed(() => (workout.value ? workoutSegments(workout.value) : []))
 </script>
 
 <template>
@@ -29,25 +23,25 @@ const intensityLabel: Record<string, string> = {
       <SportBadge :sport="workout.sport" />
       <h1 class="mt-3 text-3xl font-semibold tracking-tight">{{ workout.title }}</h1>
       <p class="mt-2 text-sm text-muted">
-        {{ formatDateLong(workout.date) }} · {{ workout.durationMin }} min · {{ intensityLabel[workout.intensity] }}
+        {{ formatDateLong(workout.date) }} · {{ workout.durationMin }} min · {{ INTENSITY_LABEL[workout.intensity] }}
       </p>
       <p class="mt-4 leading-relaxed">{{ workout.description }}</p>
 
+      <div class="mt-6">
+        <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Ablauf</p>
+        <IntervalChart :workout="workout" />
+      </div>
+
       <ol class="mt-6 space-y-2">
-        <li v-for="(block, i) in workout.structure" :key="block.id" class="rounded-2xl border border-line bg-paper p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">Schritt {{ i + 1 }}</p>
-              <h2 class="mt-1 text-lg font-semibold">{{ block.label }}</h2>
+        <li v-for="(seg, i) in segments" :key="i" class="flex items-start gap-3 rounded-2xl border border-line bg-paper p-4">
+          <span class="mt-0.5 w-6 shrink-0 text-xs font-semibold tabular-nums text-muted">{{ i + 1 }}</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-start justify-between gap-3">
+              <h2 class="font-semibold">{{ seg.label }}</h2>
+              <p class="shrink-0 text-sm tabular-nums text-muted">{{ Math.round(seg.durationMin * 10) / 10 }} min</p>
             </div>
-            <p class="text-sm tabular-nums text-muted">{{ block.durationMin ? `${block.durationMin} min` : '' }}</p>
+            <p class="mt-1 text-sm text-muted">{{ INTENSITY_LABEL[seg.intensity] }} · {{ seg.target }}</p>
           </div>
-          <p class="mt-2 text-sm">Ziel: {{ block.target }}</p>
-          <ul v-if="block.steps?.length" class="mt-2 space-y-1 text-sm text-muted">
-            <li v-for="(step, si) in block.steps" :key="si">
-              {{ step.label }} — {{ step.target }}
-            </li>
-          </ul>
         </li>
       </ol>
     </article>

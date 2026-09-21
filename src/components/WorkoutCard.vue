@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+import IntervalChart from './IntervalChart.vue'
 import SportBadge from './SportBadge.vue'
 import type { PlannedWorkout } from '@/lib/types'
+import { INTENSITY_LABEL } from '@/lib/sport'
 
 defineProps<{
   workout: PlannedWorkout
@@ -15,11 +17,17 @@ defineProps<{
   >
     <div class="flex items-start justify-between gap-3">
       <div>
-        <SportBadge :sport="workout.sport" />
+        <div class="flex flex-wrap items-center gap-2">
+          <SportBadge :sport="workout.sport" />
+          <span class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ INTENSITY_LABEL[workout.intensity] }}</span>
+        </div>
         <h3 class="mt-2 text-lg font-semibold leading-tight">{{ workout.title }}</h3>
       </div>
       <p class="shrink-0 text-sm tabular-nums text-muted">{{ workout.durationMin }} min</p>
     </div>
     <p class="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">{{ workout.description }}</p>
+    <div class="mt-3">
+      <IntervalChart :workout="workout" compact />
+    </div>
   </RouterLink>
 </template>

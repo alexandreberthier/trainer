@@ -1,44 +1,55 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { WEEKDAYS_DE, addDays, isoDate, parseIsoDate, startOfWeekMonday } from '@/lib/format'
 import { SPORT_DOT } from '@/lib/sport'
 import { workoutsOn } from '@/lib/plan/generate'
 import { useTrainerStore } from '@/stores/trainer'
 
-const store = useTrainerStore()
-const router = useRouter()
-const today = isoDate(new Date())
-const start = startOfWeekMonday(today)
-const days = computed(() => Array.from({ length: 7 }, (_, i) => addDays(start, i)))
+const props = withDefaults(
+  defineProps<{
+    start?: string
+  }>(),
+  {},
+)
 
-function openDay(iso: string) {
-  const items = workoutsOn(store.plan, iso)
-  if (items[0]) router.push({ name: 'workout', params: { id: items[0].id } })
-  else router.push({ name: 'calendar' })
-}
+const store = useTrainerStore()
+const today = isoDate(new Date())
+const weekStart = computed(() => startOfWeekMonday(props.start ?? today))
+const days = computed(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart.value, i)))
 </script>
 
 <template>
-  <div class="grid grid-cols-7 gap-1.5">
-    <button
+  <div class="grid grid-cols-2 gap-2 sm:grid-cols-7">
+    <RouterLink
       v-for="(day, i) in days"
       :key="day"
-      type="button"
-      class="rounded-xl border px-1 py-2 text-center transition hover:border-ink/20"
-      :class="day === today ? 'border-strava bg-paper' : 'border-line/80 bg-paper'"
-      @click="openDay(day)"
+      :to="
+        workoutsOn(store.plan, day)[0]
+          ? { name: 'workout', params: { id: workoutsOn(store.plan, day)[0].id } }
+          : { name: 'calendar' }
+      "
+      class="min-h-[88px] rounded-2xl border px-2.5 py-2 text-left transition hover:border-ink/20"
+      :class="day === today ? 'border-ink bg-paper shadow-sm' : 'border-line bg-paper'"
     >
-      <p class="text-[10px] font-semibold uppercase tracking-wide text-muted">{{ WEEKDAYS_DE[i] }}</p>
-      <p class="mt-0.5 text-sm font-semibold">{{ parseIsoDate(day).getDate() }}</p>
-      <div class="mt-1.5 flex min-h-2 justify-center gap-0.5">
-        <span
+      <div class="flex items-baseline justify-between gap-1">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ WEEKDAYS_DE[i] }}</p>
+        <p class="text-sm font-semibold tabular-nums">{{ parseIsoDate(day).getDate() }}</p>
+      </div>
+      <div v-if="workoutsOn(store.plan, day).length" class="mt-2 space-y-1">
+        <p
           v-for="w in workoutsOn(store.plan, day)"
           :key="w.id"
-          class="h-1.5 w-1.5 rounded-full"
-          :class="SPORT_DOT[w.sport]"
-        />
+          class="line-clamp-2 text-[12px] font-medium leading-tight"
+        >
+          <span class="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" :class="SPORT_DOT[w.sport]" />
+          {{ w.title.replace(/^(Dauerlauf |Rad |Schwimm-?)/, '') }}
+        </p>
+        <p class="text-[11px] tabular-nums text-muted">
+          {{ workoutsOn(store.plan, day).reduce((s, w) => s + w.durationMin, 0) }} min
+        </p>
       </div>
-    </button>
+      <p v-else class="mt-3 text-[12px] text-muted">Ruhe</p>
+    </RouterLink>
   </div>
 </template>

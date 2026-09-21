@@ -151,10 +151,28 @@ export default async function handler(req, res) {
     }
     const tokens = await refreshIfNeeded(env, existing)
     const activities = await fetchActivities(tokens.access_token)
+    let stravaFtp = null
+    try {
+      const athlete = await stravaGet(tokens.access_token, '/athlete')
+      if (Number(athlete.ftp) > 50) stravaFtp = Math.round(Number(athlete.ftp))
+    } catch {
+      /* optional */
+    }
+    if (!stravaFtp) {
+      try {
+        const zones = await stravaGet(tokens.access_token, '/athlete/zones')
+        const powerZones = zones.power?.zones
+        if (Array.isArray(powerZones) && powerZones.length >= 4 && Number(powerZones[3].min) > 50) {
+          stravaFtp = Math.round(Number(powerZones[3].min) / 0.91)
+        }
+      } catch {
+        /* optional */
+      }
+    }
     sendJson(
       res,
       200,
-      { athleteName: tokens.athlete_name, athleteId: tokens.athlete_id, activities },
+      { athleteName: tokens.athlete_name, athleteId: tokens.athlete_id, activities, stravaFtp },
       tokenCookie(tokens, secure),
     )
   } catch (error) {

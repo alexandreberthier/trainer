@@ -21,6 +21,10 @@ onMounted(async () => {
   if (route.query.strava === 'connected') {
     await sync()
     history.replaceState({}, '', route.path)
+    return
+  }
+  if (store.profile.stravaConnected && store.profile.stravaFtpWatts == null) {
+    await sync()
   }
 })
 
@@ -38,7 +42,7 @@ function resetApp() {
         <nav class="flex flex-1 items-center justify-center gap-0.5 text-sm sm:justify-start sm:pl-6">
           <RouterLink to="/app" class="rounded-lg px-3 py-1.5 text-muted" exact-active-class="bg-sand font-medium text-ink">Heute</RouterLink>
           <RouterLink to="/app/calendar" class="rounded-lg px-3 py-1.5 text-muted" active-class="bg-sand font-medium text-ink">Kalender</RouterLink>
-          <RouterLink to="/app/fitness" class="rounded-lg px-3 py-1.5 text-muted" active-class="bg-sand font-medium text-ink">Paces</RouterLink>
+          <RouterLink to="/app/fitness" class="rounded-lg px-3 py-1.5 text-muted" active-class="bg-sand font-medium text-ink">Werte</RouterLink>
         </nav>
         <StravaButton />
       </div>

@@ -1,4 +1,4 @@
-import type { Activity, BikeFitness, Confidence, FitnessSnapshot, PaceZone, RunFitness, SwimFitness } from '../types'
+import type { Activity, BikeFitness, Confidence, FitnessSnapshot, PaceZone, RunFitness, SwimFitness, TrainableSport } from '../types'
 import { hoursFromSeconds } from '../format'
 import { distanceForEffortName, paceSecPerKmFromVdot, vdotFromRace, VDOT_INTENSITIES } from './vdot'
 
@@ -231,26 +231,31 @@ function analyzeBike(activities: Activity[]): BikeFitness {
   const hrRides = rides.filter((r) => (r.average_heartrate ?? 0) > 120)
   const lthr = hrRides.length >= 3 ? Math.round(median(hrRides.map((r) => r.average_heartrate!)) * 0.95 + 8) : null
 
-  const zones: PaceZone[] = ftp
-    ? [
-        { key: 'endurance', label: 'Ausdauer', intensity: 'easy', wattsLow: Math.round(ftp * 0.56), wattsHigh: Math.round(ftp * 0.75), pctLow: 56, pctHigh: 75 },
-        { key: 'tempo', label: 'Tempo', intensity: 'steady', wattsLow: Math.round(ftp * 0.76), wattsHigh: Math.round(ftp * 0.9), pctLow: 76, pctHigh: 90 },
-        { key: 'threshold', label: 'Schwelle', intensity: 'threshold', wattsLow: Math.round(ftp * 0.91), wattsHigh: Math.round(ftp * 1.05), pctLow: 91, pctHigh: 105 },
-        { key: 'vo2', label: 'VO2', intensity: 'vo2', wattsLow: Math.round(ftp * 1.06), wattsHigh: Math.round(ftp * 1.2), pctLow: 106, pctHigh: 120 },
-      ]
-    : []
-
-  // Fix duplicate wattsHigh I accidentally wrote - wait I have a syntax error
   return {
     ftpWatts: ftp,
+    estimatedFtpWatts: ftp,
+    stravaFtpWatts: null,
     source,
     confidence,
     best20minWatts: best20 ? Math.round(best20) : null,
     best60minWatts: best60 ? Math.round(best60) : null,
     hasPower: withPower.length > 0,
     lthr,
-    zones,
+    zones: ftp ? bikeZones(ftp) : [],
   }
+}
+
+function bikeZones(ftp: number): PaceZone[] {
+  return [
+    { key: 'endurance', label: 'Ausdauer', intensity: 'easy', wattsLow: Math.round(ftp * 0.56), wattsHigh: Math.round(ftp * 0.75), pctLow: 56, pctHigh: 75 },
+    { key: 'tempo', label: 'Tempo', intensity: 'steady', wattsLow: Math.round(ftp * 0.76), wattsHigh: Math.round(ftp * 0.9), pctLow: 76, pctHigh: 90 },
+    { key: 'threshold', label: 'Schwelle', intensity: 'threshold', wattsLow: Math.round(ftp * 0.91), wattsHigh: Math.round(ftp * 1.05), pctLow: 91, pctHigh: 105 },
+    { key: 'vo2', label: 'VO2', intensity: 'vo2', wattsLow: Math.round(ftp * 1.06), wattsHigh: Math.round(ftp * 1.2), pctLow: 106, pctHigh: 120 },
+  ]
+}
+
+function applyFtp(bike: BikeFitness, watts: number, source: string, confidence: Confidence): BikeFitness {
+  return { ...bike, ftpWatts: watts, source, confidence, zones: bikeZones(watts) }
 }
 
 function swimPacePer100(distanceM: number, timeSec: number): number {
@@ -321,11 +326,55 @@ function analyzeSwim(activities: Activity[]): SwimFitness {
   }
 }
 
-export function analyzeActivities(activities: Activity[]): FitnessSnapshot {
+export interface AnalyzeOptions {
+  stravaFtpWatts?: number | null
+  ftpWattsOverride?: number | null
+  runThresholdSecOverride?: number | null
+  cssSecPer100Override?: number | null
+  enabledSports?: TrainableSport[]
+}
+
+export function analyzeActivities(activities: Activity[], options: AnalyzeOptions = {}): FitnessSnapshot {
   const recent = activities.filter((a) => inWindow(a.start_date))
   const run = analyzeRun(recent)
-  const bike = analyzeBike(recent)
+  let bike = analyzeBike(recent)
   const swim = analyzeSwim(recent)
+  const sports = new Set(options.enabledSports?.length ? options.enabledSports : ['swim', 'bike', 'run'])
+
+  bike.stravaFtpWatts = options.stravaFtpWatts && options.stravaFtpWatts > 50 ? Math.round(options.stravaFtpWatts) : null
+
+  if (options.ftpWattsOverride && options.ftpWattsOverride > 50) {
+    bike = applyFtp(bike, Math.round(options.ftpWattsOverride), 'Von dir gesetzt — überschreibt Strava und Schätzung.', 'high')
+  } else if (bike.stravaFtpWatts) {
+    bike = applyFtp(
+      bike,
+      bike.stravaFtpWatts,
+      `FTP aus deinem Strava-Profil (${bike.stravaFtpWatts} W). Aus Fahrten geschätzt: ${bike.estimatedFtpWatts ?? '—'} W.`,
+      'high',
+    )
+  }
+
+  if (options.runThresholdSecOverride && options.runThresholdSecOverride > 150) {
+    const threshold = Math.round(options.runThresholdSecOverride)
+    const vdot = run.vdot ?? 45
+    run.thresholdPaceSecPerKm = threshold
+    run.source = 'Lauf-Schwelle von dir gesetzt.'
+    run.confidence = 'high'
+    run.zones = runZones(threshold, vdot)
+  }
+
+  if (options.cssSecPer100Override && options.cssSecPer100Override > 50) {
+    const css = Math.round(options.cssSecPer100Override)
+    swim.cssSecPer100 = css
+    swim.needsTest = false
+    swim.source = 'CSS von dir gesetzt.'
+    swim.confidence = 'high'
+    swim.zones = [
+      { key: 'easy', label: 'Technik / Easy', intensity: 'easy', paceLowSec: Math.round(css * 1.08), paceHighSec: Math.round(css * 1.18), pctLow: 0, pctHigh: 90 },
+      { key: 'css', label: 'CSS', intensity: 'threshold', paceSec: css, pctLow: 98, pctHigh: 102 },
+      { key: 'fast', label: 'schneller als CSS', intensity: 'vo2', paceLowSec: Math.round(css * 0.9), paceHighSec: Math.round(css * 0.96), pctLow: 104, pctHigh: 112 },
+    ]
+  }
 
   const byWeek = new Map<string, number>()
   const sportHours = { swim: 0, bike: 0, run: 0 }
@@ -347,15 +396,15 @@ export function analyzeActivities(activities: Activity[]): FitnessSnapshot {
     : 0
 
   const warnings: string[] = []
-  if (run.confidence === 'none' || run.confidence === 'low') {
+  if (sports.has('run') && (run.confidence === 'none' || run.confidence === 'low')) {
     warnings.push('Lauf-Schwelle unsicher. Ein 5-km-Test würde die Paces deutlich verbessern.')
   }
-  if (!bike.hasPower) {
+  if (sports.has('bike') && !bike.hasPower && !bike.stravaFtpWatts && !options.ftpWattsOverride) {
     warnings.push('Kein Powermeter — Rad-Einheiten nutzen Herzfrequenz oder RPE statt Watt.')
-  } else if (bike.confidence === 'low' || bike.confidence === 'none') {
-    warnings.push('FTP unsicher. Ein 20-Minuten-Test auf dem Rad wäre sinnvoll.')
+  } else if (sports.has('bike') && (bike.confidence === 'low' || bike.confidence === 'none') && !bike.stravaFtpWatts && !options.ftpWattsOverride) {
+    warnings.push('FTP unsicher. Trag den Wert aus Strava ein oder mach einen 20-Minuten-Test.')
   }
-  if (swim.needsTest) {
+  if (sports.has('swim') && swim.needsTest) {
     warnings.push('Schwimm-CSS unsicher. Woche 1 enthält einen 400/200-m-Test.')
   }
   if (weeklyHours < 2) {

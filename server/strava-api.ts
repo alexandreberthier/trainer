@@ -3,6 +3,7 @@ import {
   clearCookie,
   exchangeCode,
   fetchActivities,
+  fetchStravaFtp,
   normalizeEnv,
   readCookieTokens,
   refreshIfNeeded,
@@ -61,7 +62,8 @@ export async function handleStravaRequest(
       }
       const tokens = await refreshIfNeeded(env, existing)
       const activities = await fetchActivities(tokens.access_token)
-      sendJson(res, 200, { athleteName: tokens.athlete_name, athleteId: tokens.athlete_id, activities }, [
+      const stravaFtp = await fetchStravaFtp(tokens.access_token)
+      sendJson(res, 200, { athleteName: tokens.athlete_name, athleteId: tokens.athlete_id, activities, stravaFtp }, [
         `Set-Cookie: ${tokenCookie(tokens, secure)}`,
       ])
       return true

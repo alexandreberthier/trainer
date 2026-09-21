@@ -23,10 +23,18 @@ export function useStravaConnect() {
     error.value = null
     try {
       const res = await fetch('/api/strava/sync')
-      const data = (await res.json()) as { error?: string; athleteName?: string; activities?: unknown[] }
+      const data = (await res.json()) as {
+        error?: string
+        athleteName?: string
+        activities?: unknown[]
+        stravaFtp?: number | null
+      }
       if (!res.ok) throw new Error(data.error || 'Sync fehlgeschlagen')
       store.athleteName = data.athleteName ?? store.athleteName
-      store.setActivities((data.activities as Activity[] | undefined) ?? [], true)
+      store.setActivities((data.activities as Activity[] | undefined) ?? [], {
+        connected: true,
+        stravaFtpWatts: data.stravaFtp ?? null,
+      })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Sync fehlgeschlagen'
     } finally {

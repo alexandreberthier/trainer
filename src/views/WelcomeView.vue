@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { WEEKDAYS_DE } from '@/lib/format'
 import { isStravaConfigured, stravaAuthorizeUrl } from '@/lib/strava'
-import type { RaceDistance } from '@/lib/types'
+import type { RaceDistance, TrainableSport } from '@/lib/types'
 import { useTrainerStore } from '@/stores/trainer'
 
 const store = useTrainerStore()
@@ -18,6 +18,7 @@ const form = reactive({
   raceName: store.profile.raceName,
   weeklyHoursTarget: store.profile.weeklyHoursTarget,
   availableDays: [...store.profile.availableDays],
+  enabledSports: [...(store.profile.enabledSports?.length ? store.profile.enabledSports : ['swim', 'bike', 'run'])] as TrainableSport[],
 })
 
 const races: Array<{ id: RaceDistance; title: string; detail: string }> = [
@@ -27,6 +28,13 @@ const races: Array<{ id: RaceDistance; title: string; detail: string }> = [
   { id: 'ironman', title: 'Ironman', detail: '3,8 · 180 · 42,2' },
 ]
 
+const sportOptions: Array<{ id: TrainableSport; label: string }> = [
+  { id: 'swim', label: 'Schwimmen' },
+  { id: 'bike', label: 'Rad' },
+  { id: 'run', label: 'Laufen' },
+  { id: 'strength', label: 'Kraft' },
+]
+
 function toggleDay(day: number) {
   const i = form.availableDays.indexOf(day)
   if (i >= 0) form.availableDays.splice(i, 1)
@@ -34,10 +42,26 @@ function toggleDay(day: number) {
   form.availableDays.sort()
 }
 
+function toggleSport(sport: TrainableSport) {
+  const i = form.enabledSports.indexOf(sport)
+  const endurance = form.enabledSports.filter((s) => s !== 'strength')
+  if (i >= 0) {
+    if (sport !== 'strength' && endurance.length <= 1) return
+    form.enabledSports.splice(i, 1)
+  } else {
+    form.enabledSports.push(sport)
+  }
+}
+
 function valid(): boolean {
   error.value = null
-  if (form.availableDays.length < 4) {
-    error.value = 'Bitte mindestens vier Trainingstage wählen.'
+  const minDays = form.enabledSports.filter((s) => s !== 'strength').length <= 1 ? 3 : 4
+  if (form.availableDays.length < minDays) {
+    error.value = `Bitte mindestens ${minDays} Trainingstage wählen.`
+    return false
+  }
+  if (!form.enabledSports.filter((s) => s !== 'strength').length) {
+    error.value = 'Bitte mindestens eine Sportart wählen.'
     return false
   }
   if (!form.raceDate) {
@@ -125,6 +149,23 @@ function connectStrava() {
             <span class="text-xs font-semibold uppercase tracking-wider text-muted">Name des Wettkampfs</span>
             <input v-model="form.raceName" class="mt-1.5 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-ink" placeholder="optional" />
           </label>
+
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-muted">Sportarten</p>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <button
+                v-for="opt in sportOptions"
+                :key="opt.id"
+                type="button"
+                class="rounded-full px-3 py-1.5 text-sm font-semibold"
+                :class="form.enabledSports.includes(opt.id) ? 'bg-ink text-paper' : 'bg-paper text-muted ring-1 ring-line'"
+                @click="toggleSport(opt.id)"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-muted">Schwimmen weglassen oder nur Laufen — der Plan stellt sich um.</p>
+          </div>
 
           <div>
             <p class="text-xs font-semibold uppercase tracking-wider text-muted">Trainingstage</p>

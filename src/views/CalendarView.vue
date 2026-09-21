@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import IntervalChart from '@/components/IntervalChart.vue'
 import SportBadge from '@/components/SportBadge.vue'
+import WeekStrip from '@/components/WeekStrip.vue'
 import { MONTHS_DE, WEEKDAYS_DE, addDays, isoDate, parseIsoDate, startOfWeekMonday, weekdayIndex } from '@/lib/format'
 import { SPORT_DOT } from '@/lib/sport'
-import { workoutsOn } from '@/lib/plan/generate'
+import { weekWorkouts, workoutsOn } from '@/lib/plan/generate'
 import { useTrainerStore } from '@/stores/trainer'
 import type { PlannedWorkout } from '@/lib/types'
 
 const store = useTrainerStore()
-const cursor = ref(isoDate(new Date()))
-const selected = ref(isoDate(new Date()))
+const today = isoDate(new Date())
+const cursor = ref(today)
+const selected = ref(today)
 
 const monthLabel = computed(() => {
   const d = parseIsoDate(cursor.value)
@@ -34,6 +37,7 @@ const cells = computed(() => {
 })
 
 const selectedWorkouts = computed(() => workoutsOn(store.plan, selected.value))
+const selectedWeek = computed(() => weekWorkouts(store.plan, selected.value))
 
 function inMonth(iso: string) {
   return parseIsoDate(iso).getMonth() === parseIsoDate(cursor.value).getMonth()
@@ -49,13 +53,18 @@ function dayWorkouts(iso: string): PlannedWorkout[] {
   return workoutsOn(store.plan, iso)
 }
 
-const today = isoDate(new Date())
+function shortTitle(title: string) {
+  return title.replace(/^(Dauerlauf |Rad |Schwimm-?|Easy \+ )/, '')
+}
 </script>
 
 <template>
   <main class="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
-    <div class="flex items-center justify-between gap-4">
-      <h1 class="text-3xl font-semibold tracking-tight">{{ monthLabel }}</h1>
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-semibold tracking-tight">Kalender</h1>
+        <p class="mt-1 text-sm text-muted">Woche zuerst — so siehst du, was wirklich ansteht.</p>
+      </div>
       <div class="flex gap-2">
         <button type="button" class="rounded-lg border border-line bg-paper px-3 py-1.5 text-sm" @click="shiftMonth(-1)">←</button>
         <button type="button" class="rounded-lg border border-line bg-paper px-3 py-1.5 text-sm" @click="cursor = today; selected = today">Heute</button>
@@ -63,8 +72,40 @@ const today = isoDate(new Date())
       </div>
     </div>
 
-    <div class="mt-6 overflow-x-auto">
-      <div class="grid min-w-[640px] grid-cols-7 gap-px rounded-2xl border border-line bg-line">
+    <section class="mt-6">
+      <h2 class="text-lg font-semibold">{{ monthLabel }} · gewählte Woche</h2>
+      <div class="mt-3">
+        <WeekStrip :start="selected" />
+      </div>
+    </section>
+
+    <section class="mt-6 grid gap-3 lg:grid-cols-2">
+      <article
+        v-for="w in selectedWeek"
+        :key="w.id"
+        class="rounded-2xl border border-line bg-paper p-4"
+        :class="w.date === selected ? 'ring-1 ring-ink/20' : ''"
+      >
+        <RouterLink :to="{ name: 'workout', params: { id: w.id } }" class="block">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">
+            {{ WEEKDAYS_DE[weekdayIndex(w.date)] }} · {{ parseIsoDate(w.date).getDate() }}. · {{ w.durationMin }} min
+          </p>
+          <div class="mt-1 flex items-center gap-2">
+            <SportBadge :sport="w.sport" />
+            <h3 class="font-semibold">{{ w.title }}</h3>
+          </div>
+          <p class="mt-2 line-clamp-2 text-sm text-muted">{{ w.description }}</p>
+          <div class="mt-3">
+            <IntervalChart :workout="w" compact />
+          </div>
+        </RouterLink>
+      </article>
+      <p v-if="!selectedWeek.length" class="text-sm text-muted">In dieser Woche steht nichts im Plan.</p>
+    </section>
+
+    <div class="mt-8 overflow-x-auto">
+      <p class="mb-3 text-sm font-semibold">Monat</p>
+      <div class="grid min-w-[720px] grid-cols-7 gap-px rounded-2xl border border-line bg-line">
         <div v-for="d in WEEKDAYS_DE" :key="d" class="bg-paper py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-muted">
           {{ d }}
         </div>
@@ -72,29 +113,26 @@ const today = isoDate(new Date())
           v-for="day in cells"
           :key="day"
           type="button"
-          class="min-h-[88px] bg-paper p-2 text-left transition hover:bg-sand"
+          class="min-h-[96px] bg-paper p-2 text-left transition hover:bg-sand"
           :class="[
             inMonth(day) ? '' : 'opacity-35',
             selected === day ? 'bg-sand' : '',
-            day === today ? 'ring-1 ring-inset ring-strava' : '',
+            day === today ? 'ring-1 ring-inset ring-ink' : '',
           ]"
           @click="selected = day"
         >
           <span class="text-sm font-semibold tabular-nums">{{ parseIsoDate(day).getDate() }}</span>
-          <div class="mt-2 flex flex-wrap gap-1">
-            <span
-              v-for="w in dayWorkouts(day)"
-              :key="w.id"
-              class="h-2 w-2 rounded-full"
-              :class="SPORT_DOT[w.sport]"
-              :title="w.title"
-            />
+          <div class="mt-1 space-y-1">
+            <p v-for="w in dayWorkouts(day)" :key="w.id" class="truncate text-[11px] leading-tight">
+              <span class="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" :class="SPORT_DOT[w.sport]" />
+              {{ shortTitle(w.title) }}
+            </p>
           </div>
         </button>
       </div>
     </div>
 
-    <section class="mt-6 rounded-2xl border border-line bg-paper p-5">
+    <section class="mt-6 rounded-2xl border border-line bg-paper p-5 lg:hidden">
       <p class="text-xs font-semibold uppercase tracking-wide text-muted">
         {{ WEEKDAYS_DE[weekdayIndex(selected)] }} · {{ parseIsoDate(selected).getDate() }}.
       </p>
