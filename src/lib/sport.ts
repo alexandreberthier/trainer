@@ -1,4 +1,29 @@
-import type { Sport } from './types'
+import type { Sport, TrainableSport } from './types'
+
+export type FocusPreset = 'triathlon' | 'run' | 'noSwim'
+
+export const FOCUS_PRESETS: Array<{
+  id: FocusPreset
+  label: string
+  hint: string
+  sports: TrainableSport[]
+}> = [
+  { id: 'triathlon', label: 'Triathlon', hint: 'Schwimmen, Rad und Laufen', sports: ['swim', 'bike', 'run'] },
+  { id: 'run', label: 'Nur Laufen', hint: 'Der ganze Plan nur mit Laufeinheiten', sports: ['run'] },
+  { id: 'noSwim', label: 'Ohne Schwimmen', hint: 'Rad und Laufen, Schwimmen aus', sports: ['bike', 'run'] },
+]
+
+export function focusFromSports(sports: TrainableSport[]): FocusPreset | null {
+  const key = sports
+    .filter((sport) => sport !== 'strength')
+    .slice()
+    .sort()
+    .join(',')
+  if (key === 'bike,run,swim') return 'triathlon'
+  if (key === 'run') return 'run'
+  if (key === 'bike,run') return 'noSwim'
+  return null
+}
 
 export const SPORT_LABEL: Record<Sport, string> = {
   swim: 'Schwimmen',

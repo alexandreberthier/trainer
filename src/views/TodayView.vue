@@ -5,6 +5,7 @@ import WeekStrip from '@/components/WeekStrip.vue'
 import WorkoutCard from '@/components/WorkoutCard.vue'
 import { diffDays, formatDateLong, formatPace, formatWatts, isoDate } from '@/lib/format'
 import { RACE_LABEL, weekWorkouts } from '@/lib/plan/generate'
+import { focusFromSports } from '@/lib/sport'
 import { useTrainerStore } from '@/stores/trainer'
 
 const store = useTrainerStore()
@@ -15,6 +16,7 @@ const upcoming = computed(() =>
   weekWorkouts(store.plan, today).filter((w) => w.date > today).slice(0, 4),
 )
 const sports = computed(() => store.profile.enabledSports)
+const focus = computed(() => focusFromSports(store.profile.enabledSports))
 
 const phaseLabel: Record<string, string> = {
   base: 'Grundlagen',
@@ -36,6 +38,8 @@ const phaseLabel: Record<string, string> = {
           · {{ RACE_LABEL[store.profile.raceType] }}
           in {{ daysToRace }} Tagen
           · {{ phaseLabel[phase] }}
+          <span v-if="focus === 'run'">· Nur Laufen</span>
+          <span v-else-if="focus === 'noSwim'">· Ohne Schwimmen</span>
         </p>
       </div>
       <RouterLink to="/app/fitness" class="flex flex-wrap gap-4 rounded-2xl border border-line bg-paper px-4 py-3 text-sm hover:border-ink/15">
@@ -59,13 +63,13 @@ const phaseLabel: Record<string, string> = {
         <h2 class="text-lg font-semibold">Diese Woche</h2>
         <RouterLink to="/app/calendar" class="text-sm text-muted hover:text-ink">Ganzer Kalender</RouterLink>
       </div>
-      <WeekStrip />
+      <WeekStrip from="today" />
     </section>
 
     <section class="mt-8">
       <h2 class="text-lg font-semibold">Heute dran</h2>
       <div v-if="store.todayWorkouts.length" class="mt-3 grid gap-3 md:max-w-xl">
-        <WorkoutCard v-for="w in store.todayWorkouts" :key="w.id" :workout="w" />
+        <WorkoutCard v-for="w in store.todayWorkouts" :key="w.id" :workout="w" from="today" />
       </div>
       <p v-else class="mt-3 rounded-2xl border border-dashed border-line bg-paper px-5 py-8 text-sm text-muted">
         Ruhetag — erholen, schlafen, essen.
@@ -76,7 +80,7 @@ const phaseLabel: Record<string, string> = {
       <h2 class="text-lg font-semibold">Als Nächstes</h2>
       <ul class="mt-3 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
         <li v-for="w in upcoming" :key="w.id">
-          <RouterLink :to="{ name: 'workout', params: { id: w.id } }" class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-sand">
+          <RouterLink :to="{ name: 'workout', params: { id: w.id }, query: { from: 'today', day: w.date } }" class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-sand">
             <div>
               <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ formatDateLong(w.date) }}</p>
               <p class="font-medium">{{ w.title }}</p>

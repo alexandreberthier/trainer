@@ -3,6 +3,12 @@ import { useTrainerStore } from '@/stores/trainer'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.hash) return { el: to.hash }
+    if (to.name !== from.name || to.params.id !== from.params.id) return { top: 0 }
+    return false
+  },
   routes: [
     { path: '/', name: 'welcome', component: () => import('@/views/WelcomeView.vue') },
     {

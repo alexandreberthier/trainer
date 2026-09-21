@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { WEEKDAYS_DE } from '@/lib/format'
 import { isStravaConfigured, stravaAuthorizeUrl } from '@/lib/strava'
+import { FOCUS_PRESETS, focusFromSports } from '@/lib/sport'
 import type { RaceDistance, TrainableSport } from '@/lib/types'
 import { useTrainerStore } from '@/stores/trainer'
 
@@ -53,6 +54,13 @@ function toggleSport(sport: TrainableSport) {
   }
 }
 
+function applyFocus(id: (typeof FOCUS_PRESETS)[number]['id']) {
+  const preset = FOCUS_PRESETS.find((item) => item.id === id)
+  if (!preset) return
+  const keepStrength = form.enabledSports.includes('strength')
+  form.enabledSports = keepStrength ? [...preset.sports, 'strength'] : [...preset.sports]
+}
+
 function valid(): boolean {
   error.value = null
   const minDays = form.enabledSports.filter((s) => s !== 'strength').length <= 1 ? 3 : 4
@@ -97,7 +105,7 @@ function connectStrava() {
           Trainingsplan aus deinen Strava-Daten.
         </h1>
         <p class="mt-4 max-w-md text-muted">
-          Schwellenpaces aus echten Bestleistungen, dann ein Kalender für Schwimmen, Rad und Laufen — Tag für Tag.
+          Trainingsplan aus deinen Strava-Daten — auch wenn du nur laufen willst.
         </p>
 
         <form class="mt-10 space-y-6" @submit.prevent="connectStrava">
@@ -151,8 +159,21 @@ function connectStrava() {
           </label>
 
           <div>
-            <p class="text-xs font-semibold uppercase tracking-wider text-muted">Sportarten</p>
-            <div class="mt-2 flex flex-wrap gap-2">
+            <p class="text-xs font-semibold uppercase tracking-wider text-muted">Fokus</p>
+            <div class="mt-2 grid gap-2 sm:grid-cols-3">
+              <button
+                v-for="preset in FOCUS_PRESETS"
+                :key="preset.id"
+                type="button"
+                class="rounded-xl border px-3 py-2.5 text-left text-sm transition"
+                :class="focusFromSports(form.enabledSports) === preset.id ? 'border-ink bg-ink text-paper' : 'border-line bg-paper hover:border-ink/30'"
+                @click="applyFocus(preset.id)"
+              >
+                <span class="block font-semibold">{{ preset.label }}</span>
+                <span class="text-[11px] opacity-70">{{ preset.hint }}</span>
+              </button>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-2">
               <button
                 v-for="opt in sportOptions"
                 :key="opt.id"
@@ -164,7 +185,6 @@ function connectStrava() {
                 {{ opt.label }}
               </button>
             </div>
-            <p class="mt-2 text-xs text-muted">Schwimmen weglassen oder nur Laufen — der Plan stellt sich um.</p>
           </div>
 
           <div>

@@ -2,17 +2,25 @@
 import { RouterLink } from 'vue-router'
 import IntervalChart from './IntervalChart.vue'
 import SportBadge from './SportBadge.vue'
+import ActualStatus from './ActualStatus.vue'
 import type { PlannedWorkout } from '@/lib/types'
 import { INTENSITY_LABEL } from '@/lib/sport'
+import { useTrainerStore } from '@/stores/trainer'
 
-defineProps<{
-  workout: PlannedWorkout
-}>()
+withDefaults(
+  defineProps<{
+    workout: PlannedWorkout
+    from?: string
+  }>(),
+  { from: 'today' },
+)
+
+const store = useTrainerStore()
 </script>
 
 <template>
   <RouterLink
-    :to="{ name: 'workout', params: { id: workout.id } }"
+    :to="{ name: 'workout', params: { id: workout.id }, query: { from, day: workout.date } }"
     class="block rounded-2xl border border-line bg-paper p-4 text-left shadow-sm transition hover:border-ink/15 hover:shadow"
   >
     <div class="flex items-start justify-between gap-3">
@@ -20,6 +28,7 @@ defineProps<{
         <div class="flex flex-wrap items-center gap-2">
           <SportBadge :sport="workout.sport" />
           <span class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ INTENSITY_LABEL[workout.intensity] }}</span>
+          <ActualStatus :workout="workout" :activities="store.activities" />
         </div>
         <h3 class="mt-2 text-lg font-semibold leading-tight">{{ workout.title }}</h3>
       </div>

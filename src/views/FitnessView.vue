@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { formatDuration, formatPace, formatPaceRange, formatWatts } from '@/lib/format'
 import { useTrainerStore } from '@/stores/trainer'
+import { FOCUS_PRESETS, focusFromSports } from '@/lib/sport'
 import type { Confidence, TrainableSport } from '@/lib/types'
 
 const store = useTrainerStore()
@@ -74,6 +75,7 @@ function clearOverride(key: 'ftpWattsOverride' | 'runThresholdSecOverride' | 'cs
 }
 
 const sports = computed(() => store.profile.enabledSports)
+const focus = computed(() => focusFromSports(store.profile.enabledSports))
 </script>
 
 <template>
@@ -85,7 +87,20 @@ const sports = computed(() => store.profile.enabledSports)
 
     <section class="mt-6 rounded-2xl border border-line bg-paper p-5">
       <h2 class="text-lg font-semibold">Was soll im Plan stehen?</h2>
-      <p class="mt-1 text-sm text-muted">Zum Beispiel nur Laufen — oder Schwimmen erstmal aus.</p>
+      <p class="mt-1 text-sm text-muted">Zuerst ein Fokus, danach kannst du einzelne Sportarten noch an- oder ausmachen.</p>
+      <div class="mt-4 grid gap-2 sm:grid-cols-3">
+        <button
+          v-for="preset in FOCUS_PRESETS"
+          :key="preset.id"
+          type="button"
+          class="rounded-xl border px-4 py-3 text-left transition"
+          :class="focus === preset.id ? 'border-ink bg-ink text-paper' : 'border-line bg-paper hover:border-ink/30'"
+          @click="store.setFocus(preset.id)"
+        >
+          <span class="block font-semibold">{{ preset.label }}</span>
+          <span class="text-[12px] opacity-70">{{ preset.hint }}</span>
+        </button>
+      </div>
       <div class="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <button
           v-for="opt in sportOptions"

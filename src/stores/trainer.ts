@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { analyzeActivities } from '@/lib/fitness/analyze'
 import { demoActivities } from '@/lib/demo'
+import { FOCUS_PRESETS, type FocusPreset } from '@/lib/sport'
 import { generatePlan } from '@/lib/plan/generate'
 import type { Activity, AthleteProfile, FitnessSnapshot, RaceDistance, TrainableSport, TrainingPlan } from '@/lib/types'
 import { isoDate } from '@/lib/format'
@@ -174,6 +175,15 @@ export const useTrainerStore = defineStore('trainer', () => {
     updateProfile({ enabledSports: current })
   }
 
+  function setFocus(id: FocusPreset) {
+    const preset = FOCUS_PRESETS.find((item) => item.id === id)
+    if (!preset) return
+    const keepStrength = profile.value.enabledSports.includes('strength')
+    updateProfile({
+      enabledSports: keepStrength ? [...preset.sports, 'strength'] : [...preset.sports],
+    })
+  }
+
   function resetAll() {
     localStorage.removeItem(STORAGE_KEY)
     profile.value = defaultProfile()
@@ -204,6 +214,7 @@ export const useTrainerStore = defineStore('trainer', () => {
     setActivities,
     updateProfile,
     toggleSport,
+    setFocus,
     rebuild,
     resetAll,
     persist,
