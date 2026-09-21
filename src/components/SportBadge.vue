@@ -16,12 +16,12 @@ const labels: Record<Sport, string> = {
 }
 
 const classes: Record<Sport, string> = {
-  swim: 'bg-teal/12 text-teal-2',
-  bike: 'bg-gold/15 text-ink',
-  run: 'bg-coral/12 text-coral',
+  swim: 'bg-swim/12 text-swim',
+  bike: 'bg-bike/15 text-bike',
+  run: 'bg-run/12 text-run',
   brick: 'bg-ink/8 text-ink',
-  strength: 'bg-sand-2 text-ink-soft',
-  rest: 'bg-sand-2 text-ink-soft',
+  strength: 'bg-sand text-muted',
+  rest: 'bg-sand text-muted',
 }
 </script>
 

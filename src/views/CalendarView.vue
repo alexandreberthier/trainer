@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import SportBadge from '@/components/SportBadge.vue'
 import { MONTHS_DE, WEEKDAYS_DE, addDays, isoDate, parseIsoDate, startOfWeekMonday, weekdayIndex } from '@/lib/format'
+import { SPORT_DOT } from '@/lib/sport'
 import { workoutsOn } from '@/lib/plan/generate'
 import { useTrainerStore } from '@/stores/trainer'
 import type { PlannedWorkout } from '@/lib/types'
 
 const store = useTrainerStore()
-const router = useRouter()
 const cursor = ref(isoDate(new Date()))
 const selected = ref(isoDate(new Date()))
 
@@ -53,66 +53,67 @@ const today = isoDate(new Date())
 </script>
 
 <template>
-  <main class="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-    <div class="flex items-end justify-between gap-4">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.25em] text-teal">Kalender</p>
-        <h1 class="mt-2 font-display text-4xl">{{ monthLabel }}</h1>
-      </div>
+  <main class="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+    <div class="flex items-center justify-between gap-4">
+      <h1 class="text-3xl font-semibold tracking-tight">{{ monthLabel }}</h1>
       <div class="flex gap-2">
-        <button type="button" class="rounded-full border border-line bg-paper px-3 py-1.5 text-sm" @click="shiftMonth(-1)">←</button>
-        <button type="button" class="rounded-full border border-line bg-paper px-3 py-1.5 text-sm" @click="shiftMonth(1)">→</button>
+        <button type="button" class="rounded-lg border border-line bg-paper px-3 py-1.5 text-sm" @click="shiftMonth(-1)">←</button>
+        <button type="button" class="rounded-lg border border-line bg-paper px-3 py-1.5 text-sm" @click="cursor = today; selected = today">Heute</button>
+        <button type="button" class="rounded-lg border border-line bg-paper px-3 py-1.5 text-sm" @click="shiftMonth(1)">→</button>
       </div>
     </div>
 
-    <div class="mt-6 grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-wider text-ink-soft">
-      <span v-for="d in WEEKDAYS_DE" :key="d">{{ d }}</span>
-    </div>
-    <div class="mt-2 grid grid-cols-7 gap-2">
-      <button
-        v-for="day in cells"
-        :key="day"
-        type="button"
-        class="min-h-[92px] rounded-2xl border p-2 text-left transition"
-        :class="[
-          inMonth(day) ? 'bg-paper border-line' : 'bg-transparent border-transparent opacity-40',
-          selected === day ? 'ring-2 ring-ink' : '',
-          day === today ? 'border-coral' : '',
-        ]"
-        @click="selected = day"
-      >
-        <span class="text-sm font-semibold">{{ parseIsoDate(day).getDate() }}</span>
-        <div class="mt-1 space-y-1">
-          <span
-            v-for="w in dayWorkouts(day)"
-            :key="w.id"
-            class="block truncate text-[11px] leading-tight text-ink-soft"
-          >
-            {{ w.title }}
-          </span>
+    <div class="mt-6 overflow-x-auto">
+      <div class="grid min-w-[640px] grid-cols-7 gap-px rounded-2xl border border-line bg-line">
+        <div v-for="d in WEEKDAYS_DE" :key="d" class="bg-paper py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-muted">
+          {{ d }}
         </div>
-      </button>
+        <button
+          v-for="day in cells"
+          :key="day"
+          type="button"
+          class="min-h-[88px] bg-paper p-2 text-left transition hover:bg-sand"
+          :class="[
+            inMonth(day) ? '' : 'opacity-35',
+            selected === day ? 'bg-sand' : '',
+            day === today ? 'ring-1 ring-inset ring-strava' : '',
+          ]"
+          @click="selected = day"
+        >
+          <span class="text-sm font-semibold tabular-nums">{{ parseIsoDate(day).getDate() }}</span>
+          <div class="mt-2 flex flex-wrap gap-1">
+            <span
+              v-for="w in dayWorkouts(day)"
+              :key="w.id"
+              class="h-2 w-2 rounded-full"
+              :class="SPORT_DOT[w.sport]"
+              :title="w.title"
+            />
+          </div>
+        </button>
+      </div>
     </div>
 
-    <section class="mt-8 rounded-3xl bg-paper p-5">
-      <p class="text-xs uppercase tracking-wider text-ink-soft">{{ WEEKDAYS_DE[weekdayIndex(selected)] }} · {{ selected }}</p>
-      <div v-if="selectedWorkouts.length" class="mt-4 space-y-3">
-        <button
+    <section class="mt-6 rounded-2xl border border-line bg-paper p-5">
+      <p class="text-xs font-semibold uppercase tracking-wide text-muted">
+        {{ WEEKDAYS_DE[weekdayIndex(selected)] }} · {{ parseIsoDate(selected).getDate() }}.
+      </p>
+      <div v-if="selectedWorkouts.length" class="mt-4 space-y-2">
+        <RouterLink
           v-for="w in selectedWorkouts"
           :key="w.id"
-          type="button"
-          class="flex w-full items-center justify-between rounded-2xl border border-line px-4 py-3 text-left hover:border-ink/30"
-          @click="router.push({ name: 'workout', params: { id: w.id } })"
+          :to="{ name: 'workout', params: { id: w.id } }"
+          class="flex items-center justify-between rounded-xl border border-line px-4 py-3 hover:border-ink/20"
         >
           <div>
             <SportBadge :sport="w.sport" />
             <p class="mt-1 font-semibold">{{ w.title }}</p>
-            <p class="text-sm text-ink-soft">{{ w.durationMin }} min · {{ w.phase }}</p>
+            <p class="text-sm text-muted">{{ w.durationMin }} min</p>
           </div>
-          <span>→</span>
-        </button>
+          <span class="text-muted">→</span>
+        </RouterLink>
       </div>
-      <p v-else class="mt-3 text-ink-soft">Ruhetag.</p>
+      <p v-else class="mt-3 text-sm text-muted">Ruhetag.</p>
     </section>
   </main>
 </template>

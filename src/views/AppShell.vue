@@ -1,34 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import StravaButton from '@/components/StravaButton.vue'
+import { useStravaConnect } from '@/composables/useStravaConnect'
 import { useTrainerStore } from '@/stores/trainer'
 
 const store = useTrainerStore()
 const route = useRoute()
 const router = useRouter()
-const syncing = ref(false)
-const syncError = ref<string | null>(null)
-
-async function syncStrava() {
-  syncing.value = true
-  syncError.value = null
-  try {
-    const res = await fetch('/api/strava/sync')
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Sync fehlgeschlagen')
-    store.athleteName = data.athleteName
-    store.setActivities(data.activities, true)
-  } catch (e) {
-    syncError.value = e instanceof Error ? e.message : 'Sync fehlgeschlagen'
-  } finally {
-    syncing.value = false
-  }
-}
+const { syncing, error, sync } = useStravaConnect()
 
 onMounted(async () => {
   if (store.needsRebuild()) store.rebuild()
   if (route.query.strava === 'connected') {
-    await syncStrava()
+    await sync()
     history.replaceState({}, '', '/app')
   }
 })
@@ -40,22 +25,35 @@ function resetApp() {
 </script>
 
 <template>
-  <div class="grain min-h-screen">
-    <header class="border-b border-line/80 bg-sand/80 backdrop-blur">
-      <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        <RouterLink to="/app" class="font-display text-xl">Trainer</RouterLink>
-        <nav class="flex items-center gap-1 text-sm">
-          <RouterLink to="/app" class="rounded-full px-3 py-1.5" exact-active-class="bg-ink text-sand">Heute</RouterLink>
-          <RouterLink to="/app/calendar" class="rounded-full px-3 py-1.5" active-class="bg-ink text-sand">Kalender</RouterLink>
-          <RouterLink to="/app/fitness" class="rounded-full px-3 py-1.5" active-class="bg-ink text-sand">Paces</RouterLink>
-          <button type="button" class="ml-2 text-xs text-ink-soft" @click="resetApp">Reset</button>
+  <div class="min-h-screen bg-sand">
+    <header class="sticky top-0 z-20 border-b border-line bg-paper/90 backdrop-blur">
+      <div class="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
+        <RouterLink to="/app" class="shrink-0 text-base font-semibold tracking-tight">Trainer</RouterLink>
+        <nav class="flex flex-1 items-center justify-center gap-0.5 text-sm sm:justify-start sm:pl-6">
+          <RouterLink to="/app" class="rounded-lg px-3 py-1.5 text-muted" exact-active-class="bg-sand font-medium text-ink">Heute</RouterLink>
+          <RouterLink to="/app/calendar" class="rounded-lg px-3 py-1.5 text-muted" active-class="bg-sand font-medium text-ink">Kalender</RouterLink>
+          <RouterLink to="/app/fitness" class="rounded-lg px-3 py-1.5 text-muted" active-class="bg-sand font-medium text-ink">Paces</RouterLink>
         </nav>
+        <StravaButton />
       </div>
     </header>
 
-    <p v-if="syncing" class="bg-teal-2 px-4 py-2 text-center text-sm text-sand">Strava-Daten werden analysiert …</p>
-    <p v-if="syncError" class="bg-coral px-4 py-2 text-center text-sm text-paper">{{ syncError }}</p>
+    <p v-if="syncing" class="bg-ink px-4 py-2 text-center text-sm text-paper">Strava-Daten werden analysiert …</p>
+    <p v-if="error" class="bg-run px-4 py-2 text-center text-sm text-paper">{{ error }}</p>
+
+    <div
+      v-if="store.profile.demoMode && !store.profile.stravaConnected"
+      class="border-b border-line bg-paper"
+    >
+      <div class="mx-auto max-w-6xl px-4 py-2.5 text-sm text-muted sm:px-6">
+        Du siehst Beispieldaten. Oben rechts mit Strava verbinden, dann kommen echte Paces.
+      </div>
+    </div>
 
     <RouterView />
+
+    <footer class="mx-auto max-w-6xl px-4 py-8 text-center text-xs text-muted sm:px-6">
+      <button type="button" class="hover:text-ink" @click="resetApp">Daten zurücksetzen</button>
+    </footer>
   </div>
 </template>

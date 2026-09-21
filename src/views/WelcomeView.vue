@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { WEEKDAYS_DE } from '@/lib/format'
 import { isStravaConfigured, stravaAuthorizeUrl } from '@/lib/strava'
@@ -8,8 +8,8 @@ import { useTrainerStore } from '@/stores/trainer'
 
 const store = useTrainerStore()
 const router = useRouter()
-const step = ref(0)
 const error = ref<string | null>(null)
+const showSetup = ref(false)
 
 const form = reactive({
   displayName: store.profile.displayName || '',
@@ -21,13 +21,11 @@ const form = reactive({
 })
 
 const races: Array<{ id: RaceDistance; title: string; detail: string }> = [
-  { id: 'sprint', title: 'Sprint', detail: '750 m · 20 km · 5 km' },
-  { id: 'olympic', title: 'Olympic', detail: '1,5 km · 40 km · 10 km' },
-  { id: 'half', title: '70.3', detail: '1,9 km · 90 km · 21,1 km' },
-  { id: 'ironman', title: 'Ironman', detail: '3,8 km · 180 km · 42,2 km' },
+  { id: 'sprint', title: 'Sprint', detail: '750 · 20 · 5' },
+  { id: 'olympic', title: 'Olympic', detail: '1,5 · 40 · 10' },
+  { id: 'half', title: '70.3', detail: '1,9 · 90 · 21,1' },
+  { id: 'ironman', title: 'Ironman', detail: '3,8 · 180 · 42,2' },
 ]
-
-const stravaReady = isStravaConfigured()
 
 function toggleDay(day: number) {
   const i = form.availableDays.indexOf(day)
@@ -36,184 +34,161 @@ function toggleDay(day: number) {
   form.availableDays.sort()
 }
 
-function finish(useDemo: boolean) {
+function valid(): boolean {
   error.value = null
   if (form.availableDays.length < 4) {
     error.value = 'Bitte mindestens vier Trainingstage wählen.'
-    return
+    return false
   }
-  store.completeOnboarding({ ...form, useDemo })
+  if (!form.raceDate) {
+    error.value = 'Bitte ein Wettkampfdatum setzen.'
+    return false
+  }
+  return true
+}
+
+function finishDemo() {
+  if (!valid()) return
+  store.completeOnboarding({ ...form, useDemo: true })
   router.push({ name: 'today' })
 }
 
 function connectStrava() {
-  if (form.availableDays.length < 4) {
-    error.value = 'Bitte mindestens vier Trainingstage wählen.'
+  if (!valid()) return
+  store.completeOnboarding({ ...form, useDemo: true })
+  if (!isStravaConfigured()) {
+    showSetup.value = true
     return
   }
-  store.completeOnboarding({ ...form, useDemo: true })
   window.location.href = stravaAuthorizeUrl()
 }
-
-const canNext = computed(() => {
-  if (step.value === 0) return true
-  return Boolean(form.raceDate)
-})
 </script>
 
 <template>
-  <main class="grain min-h-screen">
-    <div class="mx-auto grid min-h-screen max-w-6xl gap-0 lg:grid-cols-[1.15fr_0.85fr]">
-      <section class="flex flex-col justify-between px-6 py-8 sm:px-12 lg:px-16 lg:py-14">
-        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-teal">Trainer</p>
+  <main class="min-h-screen bg-sand">
+    <div class="mx-auto grid min-h-screen max-w-6xl lg:grid-cols-2">
+      <section class="flex flex-col px-5 py-8 sm:px-10 lg:px-14 lg:py-12">
+        <p class="text-sm font-semibold tracking-tight">Trainer</p>
+        <h1 class="mt-8 text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
+          Trainingsplan aus deinen Strava-Daten.
+        </h1>
+        <p class="mt-4 max-w-md text-muted">
+          Schwellenpaces aus echten Bestleistungen, dann ein Kalender für Schwimmen, Rad und Laufen — Tag für Tag.
+        </p>
 
-        <div v-if="step === 0" class="max-w-xl py-10">
-          <p class="text-sm text-ink-soft">Triathlon-Planung aus deinen echten Zahlen</p>
-          <h1 class="mt-3 font-display text-5xl leading-[1.05] sm:text-6xl">
-            Erst die Schwelle,<br />dann der Kalender.
-          </h1>
-          <p class="mt-6 max-w-md text-base leading-relaxed text-ink-soft">
-            Die App liest deine letzten Wochen (Strava oder Demo), rechnet Lauf-Paces, FTP und CSS und baut daraus
-            einen periodisierten Plan — nicht aus einem Chat.
-          </p>
-          <button
-            type="button"
-            class="mt-10 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-sand transition hover:bg-teal-2"
-            @click="step = 1"
-          >
-            Plan starten
-          </button>
-        </div>
+        <form class="mt-10 space-y-6" @submit.prevent="connectStrava">
+          <label class="block">
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted">Name</span>
+            <input
+              v-model="form.displayName"
+              class="mt-1.5 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-ink"
+              placeholder="Alex"
+            />
+          </label>
 
-        <div v-else class="max-w-xl py-8">
-          <p class="text-sm text-ink-soft">Schritt {{ step }} von 2</p>
-          <h1 class="mt-2 font-display text-4xl">{{ step === 1 ? 'Wettkampf & Zeit' : 'Trainingsdaten' }}</h1>
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-muted">Distanz</p>
+            <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <button
+                v-for="race in races"
+                :key="race.id"
+                type="button"
+                class="rounded-xl border px-3 py-2.5 text-left text-sm transition"
+                :class="form.raceType === race.id ? 'border-ink bg-ink text-paper' : 'border-line bg-paper hover:border-ink/30'"
+                @click="form.raceType = race.id"
+              >
+                <span class="block font-semibold">{{ race.title }}</span>
+                <span class="text-[11px] opacity-70">{{ race.detail }}</span>
+              </button>
+            </div>
+          </div>
 
-          <form v-if="step === 1" class="mt-8 space-y-6" @submit.prevent="step = 2">
+          <div class="grid gap-4 sm:grid-cols-2">
             <label class="block">
-              <span class="text-xs font-semibold uppercase tracking-wider text-ink-soft">Name</span>
+              <span class="text-xs font-semibold uppercase tracking-wider text-muted">Wettkampf</span>
+              <input v-model="form.raceDate" type="date" class="mt-1.5 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-ink" />
+            </label>
+            <label class="block">
+              <span class="text-xs font-semibold uppercase tracking-wider text-muted">Stunden / Woche</span>
               <input
-                v-model="form.displayName"
-                class="mt-1 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-teal"
-                placeholder="Alex"
+                v-model.number="form.weeklyHoursTarget"
+                type="number"
+                min="3"
+                max="20"
+                step="0.5"
+                class="mt-1.5 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-ink"
               />
             </label>
+          </div>
 
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-wider text-ink-soft">Distanz</p>
-              <div class="mt-2 grid grid-cols-2 gap-2">
-                <button
-                  v-for="race in races"
-                  :key="race.id"
-                  type="button"
-                  class="rounded-2xl border px-4 py-3 text-left transition"
-                  :class="form.raceType === race.id ? 'border-ink bg-ink text-sand' : 'border-line bg-paper hover:border-ink/30'"
-                  @click="form.raceType = race.id"
-                >
-                  <span class="block font-semibold">{{ race.title }}</span>
-                  <span class="text-xs opacity-70">{{ race.detail }}</span>
-                </button>
-              </div>
+          <label class="block">
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted">Name des Wettkampfs</span>
+            <input v-model="form.raceName" class="mt-1.5 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-ink" placeholder="optional" />
+          </label>
+
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-muted">Trainingstage</p>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <button
+                v-for="(label, i) in WEEKDAYS_DE"
+                :key="label"
+                type="button"
+                class="h-10 w-10 rounded-full text-sm font-semibold"
+                :class="form.availableDays.includes(i) ? 'bg-ink text-paper' : 'bg-paper text-muted ring-1 ring-line'"
+                @click="toggleDay(i)"
+              >
+                {{ label }}
+              </button>
             </div>
+          </div>
 
-            <div class="grid gap-4 sm:grid-cols-2">
-              <label class="block">
-                <span class="text-xs font-semibold uppercase tracking-wider text-ink-soft">Wettkampftag</span>
-                <input v-model="form.raceDate" type="date" class="mt-1 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-teal" />
-              </label>
-              <label class="block">
-                <span class="text-xs font-semibold uppercase tracking-wider text-ink-soft">Stunden / Woche</span>
-                <input
-                  v-model.number="form.weeklyHoursTarget"
-                  type="number"
-                  min="3"
-                  max="20"
-                  step="0.5"
-                  class="mt-1 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-teal"
-                />
-              </label>
-            </div>
+          <p v-if="error" class="text-sm text-run">{{ error }}</p>
 
-            <label class="block">
-              <span class="text-xs font-semibold uppercase tracking-wider text-ink-soft">Wettkampf (optional)</span>
-              <input v-model="form.raceName" class="mt-1 w-full rounded-xl border border-line bg-paper px-4 py-3 outline-none focus:border-teal" placeholder="z. B. Challenge Roth" />
-            </label>
-
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-wider text-ink-soft">Verfügbare Tage</p>
-              <div class="mt-2 flex flex-wrap gap-2">
-                <button
-                  v-for="(label, i) in WEEKDAYS_DE"
-                  :key="label"
-                  type="button"
-                  class="h-10 w-10 rounded-full text-sm font-semibold"
-                  :class="form.availableDays.includes(i) ? 'bg-teal text-sand' : 'bg-sand-2 text-ink-soft'"
-                  @click="toggleDay(i)"
-                >
-                  {{ label }}
-                </button>
-              </div>
-            </div>
-
+          <div class="space-y-3 pt-2">
             <button
               type="submit"
-              class="rounded-full bg-ink px-6 py-3 text-sm font-semibold text-sand disabled:opacity-40"
-              :disabled="!canNext"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-strava px-5 py-3.5 text-base font-semibold text-white shadow-sm hover:bg-strava-2"
             >
-              Weiter
+              <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M15.39 17.94 13.3 13.83H10.24L15.39 24l5.15-10.17h-3.07m-7.01-5.6 2.92 5.85h3.06L9.28 0 4.22 10.17h3.07" />
+              </svg>
+              Mit Strava verbinden
             </button>
-          </form>
-
-          <div v-else class="mt-8 space-y-4">
-            <p class="leading-relaxed text-ink-soft">
-              Strava liefert Bestzeiten, Watt und Schwimm-Laps. Ohne Keys startest du mit realistischen Beispieldaten
-              und siehst Plan plus Paces sofort.
-            </p>
-            <button
-              v-if="stravaReady"
-              type="button"
-              class="flex w-full items-center justify-between rounded-2xl bg-coral px-5 py-4 text-left text-paper"
-              @click="connectStrava"
-            >
-              <span>
-                <strong class="block">Mit Strava verbinden</strong>
-                <span class="text-sm opacity-80">Letzte 12 Wochen analysieren</span>
-              </span>
-              <span>→</span>
+            <button type="button" class="w-full rounded-xl border border-line bg-paper px-5 py-3 text-sm font-semibold hover:border-ink/20" @click="finishDemo">
+              Erstmal mit Demo starten
             </button>
-            <button
-              type="button"
-              class="flex w-full items-center justify-between rounded-2xl border border-line bg-paper px-5 py-4 text-left"
-              @click="finish(true)"
-            >
-              <span>
-                <strong class="block">Demo starten</strong>
-                <span class="text-sm text-ink-soft">Beispieldaten eines Olympic-Athleten</span>
-              </span>
-              <span>→</span>
-            </button>
-            <p v-if="!stravaReady" class="text-sm text-ink-soft">
-              Strava-Keys fehlen in <code class="rounded bg-sand-2 px-1">.env</code> — Demo funktioniert trotzdem.
-            </p>
-            <p v-if="error" class="text-sm text-coral">{{ error }}</p>
-            <button type="button" class="text-sm text-ink-soft underline" @click="step = 1">Zurück</button>
+            <p class="text-center text-xs text-muted">Strava liefert die echten Paces. Demo zeigt den Plan sofort.</p>
           </div>
-        </div>
-
-        <p class="text-xs text-ink-soft">Vue · Vercel · Strava</p>
+        </form>
       </section>
 
-      <aside class="relative hidden overflow-hidden bg-teal-2 text-sand lg:block">
-        <div class="absolute inset-0 grain opacity-30" />
-        <div class="relative flex h-full flex-col justify-end p-12">
-          <p class="text-sm uppercase tracking-[0.25em] text-gold">Methode</p>
-          <ol class="mt-6 space-y-5 font-display text-3xl leading-tight">
-            <li>1 · Bestleistungen, nicht Durchschnitt</li>
-            <li>2 · VDOT, FTP, CSS</li>
-            <li>3 · Base → Build → Peak → Taper</li>
-          </ol>
-        </div>
+      <aside class="relative hidden bg-ink text-paper lg:flex lg:flex-col lg:justify-between lg:p-14">
+        <p class="text-sm text-white/50">So entsteht der Plan</p>
+        <ol class="space-y-8 text-2xl font-semibold leading-snug">
+          <li><span class="text-strava">01</span><br />Strava-Bestleistungen der letzten 12 Wochen</li>
+          <li><span class="text-strava">02</span><br />Schwelle, FTP und CSS rechnen</li>
+          <li><span class="text-strava">03</span><br />Kalender: Base, Build, Peak, Taper</li>
+        </ol>
+        <p class="text-sm text-white/40">Keine KI-Intervalle — feste Trainingsregeln, deine Zahlen.</p>
       </aside>
+    </div>
+
+    <div v-if="showSetup" class="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-4 sm:items-center" @click.self="showSetup = false">
+      <div class="w-full max-w-md rounded-2xl bg-paper p-6 shadow-xl">
+        <h2 class="text-lg font-semibold">Strava einrichten</h2>
+        <p class="mt-2 text-sm leading-relaxed text-muted">
+          Der Plan ist gespeichert. Für echte Daten trag Client ID und Secret in <code class="rounded bg-sand px-1">.env</code> ein und klick danach in der App erneut auf verbinden.
+        </p>
+        <ol class="mt-4 list-decimal space-y-2 pl-5 text-sm text-ink-soft">
+          <li>
+            <a class="font-medium text-strava underline" href="https://www.strava.com/settings/api" target="_blank" rel="noreferrer">strava.com/settings/api</a>
+          </li>
+          <li>Callback Domain: <code class="rounded bg-sand px-1">localhost</code></li>
+        </ol>
+        <button type="button" class="mt-5 w-full rounded-xl bg-ink py-2.5 text-sm font-semibold text-paper" @click="showSetup = false; router.push({ name: 'today' })">
+          Zur Demo, später verbinden
+        </button>
+      </div>
     </div>
   </main>
 </template>

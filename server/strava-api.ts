@@ -40,12 +40,14 @@ export function readTokens(cookieHeader?: string): StravaTokens | null {
   }
 }
 
-export function tokenCookie(tokens: StravaTokens, maxAge = 60 * 60 * 24 * 180): string {
-  return `${COOKIE}=${encodeURIComponent(JSON.stringify(tokens))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+export function tokenCookie(tokens: StravaTokens, maxAge = 60 * 60 * 24 * 180, secure = false): string {
+  const flags = secure ? '; Secure' : ''
+  return `${COOKIE}=${encodeURIComponent(JSON.stringify(tokens))}; Path=/; HttpOnly; SameSite=Lax${flags}; Max-Age=${maxAge}`
 }
 
-export function clearCookie(): string {
-  return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+export function clearCookie(secure = false): string {
+  const flags = secure ? '; Secure' : ''
+  return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax${flags}; Max-Age=0`
 }
 
 async function exchangeCode(env: StravaEnv, code: string): Promise<StravaTokens> {
@@ -58,8 +60,12 @@ async function exchangeCode(env: StravaEnv, code: string): Promise<StravaTokens>
     code,
     grant_type: 'authorization_code',
   })
+  if (env.STRAVA_REDIRECT_URI) body.set('redirect_uri', env.STRAVA_REDIRECT_URI)
   const res = await fetch('https://www.strava.com/oauth/token', { method: 'POST', body })
-  if (!res.ok) throw new Error(`Strava Token-Tausch fehlgeschlagen (${res.status})`)
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(`Strava Token-Tausch fehlgeschlagen (${res.status}): ${detail.slice(0, 200)}`)
+  }
   const data = (await res.json()) as {
     access_token: string
     refresh_token: string
@@ -152,11 +158,12 @@ export async function handleStravaRequest(
   const host = req.headers.host ?? 'localhost:5173'
   const url = new URL(req.url ?? '/', `http://${host}`)
   if (!url.pathname.startsWith('/api/strava')) return false
+  const app = env.APP_URL || `http://${host}`
+  const secure = app.startsWith('https')
 
   try {
     if (url.pathname === '/api/strava/callback') {
       const err = url.searchParams.get('error')
-      const app = env.APP_URL || `http://${host}`
       if (err) {
         res.statusCode = 302
         res.setHeader('Location', `${app}/?strava_error=${encodeURIComponent(err)}`)
@@ -167,7 +174,7 @@ export async function handleStravaRequest(
       if (!code) throw new Error('Kein OAuth-Code von Strava.')
       const tokens = await exchangeCode(env, code)
       res.statusCode = 302
-      res.setHeader('Set-Cookie', tokenCookie(tokens))
+      res.setHeader('Set-Cookie', tokenCookie(tokens, 60 * 60 * 24 * 180, secure))
       res.setHeader('Location', `${app}/app?strava=connected`)
       res.end()
       return true
@@ -182,7 +189,7 @@ export async function handleStravaRequest(
       const tokens = await refreshIfNeeded(env, existing)
       const activities = await fetchActivities(tokens.access_token)
       sendJson(res, 200, { athleteName: tokens.athlete_name, athleteId: tokens.athlete_id, activities }, [
-        `Set-Cookie: ${tokenCookie(tokens)}`,
+        `Set-Cookie: ${tokenCookie(tokens, 60 * 60 * 24 * 180, secure)}`,
       ])
       return true
     }
@@ -197,7 +204,7 @@ export async function handleStravaRequest(
     }
 
     if (url.pathname === '/api/strava/logout' && req.method === 'POST') {
-      sendJson(res, 200, { ok: true }, [`Set-Cookie: ${clearCookie()}`])
+      sendJson(res, 200, { ok: true }, [`Set-Cookie: ${clearCookie(secure)}`])
       return true
     }
 
