@@ -50,8 +50,11 @@ function onClick() {
             Öffne
             <a class="font-medium text-strava underline" href="https://www.strava.com/settings/api" target="_blank" rel="noreferrer">strava.com/settings/api</a>
           </li>
-          <li>Callback Domain: <code class="rounded bg-sand px-1">localhost</code></li>
-          <li>Client ID und Secret in die lokale <code class="rounded bg-sand px-1">.env</code> eintragen, Devserver neu starten.</li>
+          <li>
+            Authorization Callback Domain exakt:
+            <code class="rounded bg-sand px-1">trainer-psi-three.vercel.app</code>
+            — ohne https://
+          </li>
         </ol>
         <div class="mt-5 flex justify-end gap-2">
           <button type="button" class="rounded-lg px-3 py-2 text-sm text-muted" @click="closeSetup">Schließen</button>

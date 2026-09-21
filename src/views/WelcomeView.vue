@@ -183,7 +183,7 @@ function connectStrava() {
           <li>
             <a class="font-medium text-strava underline" href="https://www.strava.com/settings/api" target="_blank" rel="noreferrer">strava.com/settings/api</a>
           </li>
-          <li>Callback Domain: <code class="rounded bg-sand px-1">localhost</code></li>
+          <li>Authorization Callback Domain: <code class="rounded bg-sand px-1">trainer-psi-three.vercel.app</code> (ohne https)</li>
         </ol>
         <button type="button" class="mt-5 w-full rounded-xl bg-ink py-2.5 text-sm font-semibold text-paper" @click="showSetup = false; router.push({ name: 'today' })">
           Zur Demo, später verbinden
